@@ -1,23 +1,16 @@
 import { prisma } from "../../config/db.config.js";
 import { createVentaFullSchema, calcularTotalesSchema } from "./ventas.schema.js";
-import  { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { AppError } from "../../middlewares/error.middleware.js";
-
 function makeVentaNumero() {
     return `V-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
 }
-
 export const ventasService = {
-    async createVenta(negocioId: string, dto: unknown) {
+    async createVenta(negocioId, dto) {
         const body = createVentaFullSchema.parse(dto);
-
         // 1. Calcular totales con scope de negocio
-        const totalesCalculados = await this.calcularTotalesVenta(
-            negocioId,
-            body.detalles.map(d => ({ productoId: d.productoId, cantidad: d.cantidad }))
-        );
+        const totalesCalculados = await this.calcularTotalesVenta(negocioId, body.detalles.map(d => ({ productoId: d.productoId, cantidad: d.cantidad })));
         const totalVenta = new Prisma.Decimal(totalesCalculados.total);
-
         // 2. Validar pagos
         let totalPagos = new Prisma.Decimal(0);
         for (const pago of body.pagos) {
@@ -34,11 +27,9 @@ export const ventasService = {
                 }
             }
         }
-
         if (!totalPagos.equals(totalVenta)) {
             throw new AppError(`El total de pagos (${totalPagos}) no coincide con el total de la venta (${totalVenta})`);
         }
-
         // 3. Transacción para guardar la venta con scope de negocio
         const venta = await prisma.$transaction(async (tx) => {
             // 3.1 Manejar Cliente
@@ -55,12 +46,13 @@ export const ventasService = {
                     }
                 });
                 clienteId = nuevoCliente.id;
-            } else if (clienteId) {
+            }
+            else if (clienteId) {
                 // Verificar que el cliente pertenezca al negocio
                 const c = await tx.cliente.findFirst({ where: { id: clienteId, negocioId } });
-                if (!c) throw new AppError("El cliente no pertenece a tu negocio.");
+                if (!c)
+                    throw new AppError("El cliente no pertenece a tu negocio.");
             }
-
             // 3.2 Crear la Venta
             const nuevaVenta = await tx.venta.create({
                 data: {
@@ -73,20 +65,19 @@ export const ventasService = {
                     total: totalVenta,
                     nota: body.nota ?? null,
                     estado: "PAGADA",
-
                     detalles: {
                         create: totalesCalculados.detalles.map(d => ({
                             productoId: d.productoId,
                             cantidad: new Prisma.Decimal(d.cantidad),
                             precioUnitario: new Prisma.Decimal(d.precioUnitario),
                             subtotal: new Prisma.Decimal(d.subtotal),
-                            tipoVenta: d.tipoVenta as any,
-                            unidadMedida: d.unidadMedida as any
+                            tipoVenta: d.tipoVenta,
+                            unidadMedida: d.unidadMedida
                         }))
                     },
                     pagos: {
                         create: body.pagos.map(p => ({
-                            metodo: p.metodo as any,
+                            metodo: p.metodo,
                             monto: new Prisma.Decimal(p.monto),
                             referencia: p.referencia ?? null,
                             ultimos4: p.ultimos4 ?? null,
@@ -96,11 +87,9 @@ export const ventasService = {
                     }
                 }
             });
-
             // 3.3 Descontar Inventario y Registrar Movimientos
             for (const detalle of totalesCalculados.detalles) {
                 const cantidadVendida = new Prisma.Decimal(detalle.cantidad);
-
                 // Actualizar stock en Inventario (filtrando por productoId que está ligado al negocio indirectamente, pero mejor ser explícitos si el schema lo permite)
                 await tx.inventario.update({
                     where: { productoId: detalle.productoId },
@@ -110,7 +99,6 @@ export const ventasService = {
                         }
                     }
                 });
-
                 // Registrar el movimiento de SALIDA con negocioId
                 await tx.movimientoInventario.create({
                     data: {
@@ -122,24 +110,13 @@ export const ventasService = {
                     }
                 });
             }
-
             return nuevaVenta;
         });
-
         return venta;
     },
-
-    async calcularTotalesVenta(negocioId: string, detalles: { productoId: string; cantidad: string }[]) {
+    async calcularTotalesVenta(negocioId, detalles) {
         let subtotal = new Prisma.Decimal(0);
-        const detallesCalculados: Array<{
-            productoId: string;
-            nombreProducto: string;
-            cantidad: string;
-            precioUnitario: string;
-            subtotal: string;
-            tipoVenta: any;
-            unidadMedida: any;
-        }> = [];
+        const detallesCalculados = [];
         for (const detalle of detalles) {
             const producto = await prisma.producto.findFirst({
                 where: { id: detalle.productoId, negocioId },
@@ -168,7 +145,6 @@ export const ventasService = {
         const descuento = new Prisma.Decimal(0);
         const impuesto = new Prisma.Decimal(0);
         const total = subtotal.minus(descuento).plus(impuesto);
-
         return {
             detalles: detallesCalculados,
             subtotal: subtotal.toString(),
@@ -177,28 +153,25 @@ export const ventasService = {
             total: total.toString(),
         };
     },
-
-    async calcularTotales(negocioId: string, dto: unknown) {
+    async calcularTotales(negocioId, dto) {
         const body = calcularTotalesSchema.parse(dto);
         return await this.calcularTotalesVenta(negocioId, body.detalles);
     },
-
-    async getVentasHistory(negocioId: string, filters: { startDate?: string, endDate?: string, metodoPago?: string }) {
-        const where: Prisma.VentaWhereInput = { negocioId };
-
+    async getVentasHistory(negocioId, filters) {
+        const where = { negocioId };
         if (filters.startDate || filters.endDate) {
-            const dateFilter: Prisma.DateTimeFilter = {};
-            if (filters.startDate) dateFilter.gte = new Date(filters.startDate);
-            if (filters.endDate) dateFilter.lte = new Date(filters.endDate);
+            const dateFilter = {};
+            if (filters.startDate)
+                dateFilter.gte = new Date(filters.startDate);
+            if (filters.endDate)
+                dateFilter.lte = new Date(filters.endDate);
             where.createdAt = dateFilter;
         }
-
         if (filters.metodoPago) {
             where.pagos = {
-                some: { metodo: filters.metodoPago as any }
+                some: { metodo: filters.metodoPago }
             };
         }
-
         return await prisma.venta.findMany({
             where,
             include: {
@@ -211,12 +184,10 @@ export const ventasService = {
             orderBy: { createdAt: 'desc' }
         });
     },
-
-    async getVentasStats(negocioId: string, date?: string) {
+    async getVentasStats(negocioId, date) {
         const targetDate = date ? new Date(date) : new Date();
         const startOfDay = new Date(targetDate.setHours(0, 0, 0, 0));
         const endOfDay = new Date(targetDate.setHours(23, 59, 59, 999));
-
         const [ventas, ventasAnuladas] = await Promise.all([
             prisma.venta.findMany({
                 where: {
@@ -240,19 +211,16 @@ export const ventasService = {
                 }
             })
         ]);
-
         const totalUSD = ventas.reduce((acc, v) => acc.plus(v.total), new Prisma.Decimal(0));
         const totalAnuladasUSD = ventasAnuladas.reduce((acc, v) => acc.plus(v.total), new Prisma.Decimal(0));
-
         // Desglose por método de pago
-        const porMetodo: Record<string, number> = {};
+        const porMetodo = {};
         ventas.forEach(v => {
             v.pagos.forEach(p => {
                 const m = p.metodo.toString();
                 porMetodo[m] = (porMetodo[m] || 0) + Number(p.monto);
             });
         });
-
         return {
             totalVentas: ventas.length,
             totalUSD: totalUSD.toNumber(),
@@ -261,23 +229,21 @@ export const ventasService = {
             desgloseMetodos: porMetodo
         };
     },
-
-    async voidSale(negocioId: string, ventaId: string) {
+    async voidSale(negocioId, ventaId) {
         return await prisma.$transaction(async (tx) => {
             const venta = await tx.venta.findFirst({
                 where: { id: ventaId, negocioId },
                 include: { detalles: true }
             });
-
-            if (!venta) throw new AppError("Venta no encontrada");
-            if (venta.estado === 'ANULADA') throw new AppError("La venta ya está anulada");
-
+            if (!venta)
+                throw new AppError("Venta no encontrada");
+            if (venta.estado === 'ANULADA')
+                throw new AppError("La venta ya está anulada");
             // 1. Marcar venta como anulada
             const updatedVenta = await tx.venta.update({
                 where: { id: ventaId },
                 data: { estado: 'ANULADA' }
             });
-
             // 2. Devolver stock
             for (const detalle of venta.detalles) {
                 await tx.inventario.update({
@@ -286,7 +252,6 @@ export const ventasService = {
                         stockActual: { increment: detalle.cantidad }
                     }
                 });
-
                 // Registrar movimiento de devolución
                 await tx.movimientoInventario.create({
                     data: {
@@ -298,9 +263,8 @@ export const ventasService = {
                     }
                 });
             }
-
             return updatedVenta;
         });
     }
 };
-
+//# sourceMappingURL=ventas.service.js.map
