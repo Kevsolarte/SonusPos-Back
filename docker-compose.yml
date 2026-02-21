@@ -1,0 +1,30 @@
+services:
+  # Servicio de la Base de Datos
+  db:
+    image: postgres:15-alpine
+    container_name: softpos-db
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: kevinlee1
+      POSTGRES_DB: POScharcuteria
+    ports:
+      - "5434:5432" # Mapea el puerto 5432 del contenedor al 5434 de tu PC
+    volumes:
+      - postgres_data:/var/lib/postgresql/data # Para que no se borren los datos
+
+  # Servicio de tu Backend
+  api:
+    build: .
+    container_name: softpos-api
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:kevinlee1@db:5432/POScharcuteria
+      - JWT_ACCESS_SECRET=kevinlee1
+    depends_on:
+      - db # Espera a que la BD esté lista antes de arrancar la API
+
+volumes:
+  postgres_data:

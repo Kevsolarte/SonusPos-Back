@@ -3,7 +3,7 @@ import { z } from "zod";
 const decimalAsString = z.union([z.string(), z.number()]).transform((v) => String(v));
 
 const clienteCreateSchema = z.object({
-  nombre: z.string().min(1),
+  nombre: z.string().min(1, "Nombre es obligatorio"),
   documento: z.string().optional(),
   telefono: z.string().optional(),
   email: z.string().email().optional(),
@@ -11,17 +11,13 @@ const clienteCreateSchema = z.object({
 });
 
 const ventaDetalleSchema = z.object({
-  productoId: z.string().uuid(),
+  productoId: z.string().uuid("Producto no existe"),
   cantidad: decimalAsString,
-  precioUnitario: decimalAsString,
-  subtotal: decimalAsString,
-  tipoVenta: z.enum(["PESO", "UNIDAD"]),
-  unidadMedida: z.enum(["KG", "G", "L", "ML"]),
 });
 
 const pagoSchema = z.object({
-  metodo: z.enum(["EFECTIVO", "TARJETA", "TRANSFERENCIA"]),
-  monto: decimalAsString,
+  metodo: z.enum(["EFECTIVO", "TARJETA", "TRANSFERENCIA", "PAGO_MOVIL", "EFECTIVO_USD", "EFECTIVO_VES"]),
+  monto: decimalAsString, // puedes dejarlo o calcularlo también
   referencia: z.string().optional(),
   ultimos4: z.string().min(4).max(4).optional(),
   recibido: decimalAsString.optional(),
@@ -33,10 +29,11 @@ export const createVentaFullSchema = z
     clienteId: z.string().uuid().optional().nullable(),
     clienteCreate: clienteCreateSchema.optional().nullable(),
 
-    subtotal: decimalAsString,
-    descuento: decimalAsString.optional().default("0"),
-    impuesto: decimalAsString.optional().default("0"),
-    total: decimalAsString,
+    // ✅ si vas a calcular todo en backend, quita estos campos:
+    // subtotal: decimalAsString,
+    // descuento: decimalAsString.optional().default("0"),
+    // impuesto: decimalAsString.optional().default("0"),
+    // total: decimalAsString,
 
     nota: z.string().optional(),
 
@@ -47,3 +44,11 @@ export const createVentaFullSchema = z
     message: "Envía clienteId o clienteCreate, no ambos.",
     path: ["clienteId"],
   });
+export const calcularTotalesSchema = z.object({
+  detalles: z.array(
+    z.object({
+      productoId: z.string().uuid(),
+      cantidad: decimalAsString,
+    })
+  ).min(1),
+});

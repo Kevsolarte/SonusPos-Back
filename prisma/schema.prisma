@@ -5,12 +5,27 @@
 // Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
 
 generator client {
-  provider = "prisma-client"
-  output   = "../src/generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
+}
+
+model Negocio {
+  id        String   @id @default(uuid())
+  nombre    String
+  ruc       String?  @unique
+  direccion String?
+  telefono  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users       User[]
+  productos   Producto[]
+  clientes    Cliente[]
+  ventas      Venta[]
+  movimientos MovimientoInventario[]
 }
 
 enum Role {
@@ -24,6 +39,8 @@ model User {
   email        String   @unique
   passwordHash String
   role         Role
+  negocioId    String?
+  negocio      Negocio? @relation(fields: [negocioId], references: [id])
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
@@ -38,6 +55,8 @@ enum UnidadMedida {
   G
   L
   ML
+  UNIDAD
+  PZA
 }
 
 enum TipoMovimiento {
@@ -49,9 +68,11 @@ enum TipoMovimiento {
 
 model Producto {
   id          String  @id @default(uuid())
-  nombre      String  @unique
-  codigoBarra String? @unique
+  negocioId   String?
+  nombre      String
+  codigoBarra String?
   descripcion String?
+  imagenUrl   String?
 
   tipoVenta    TipoVenta
   unidadMedida UnidadMedida
@@ -62,8 +83,13 @@ model Producto {
   precio      Precio?
   movimientos MovimientoInventario[]
 
+  negocio   Negocio? @relation(fields: [negocioId], references: [id])
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  activo    Boolean  @default(true)
+
+  @@unique([nombre, negocioId])
+  @@unique([codigoBarra, negocioId])
 }
 
 // -----------------------
@@ -95,7 +121,6 @@ model Precio {
 
   precioDetal Decimal  @db.Decimal(10, 2)
   precioMayor Decimal? @db.Decimal(10, 2)
-  minimoMayor Decimal? @db.Decimal(10, 2)
 
   producto Producto @relation(fields: [productoId], references: [id])
 
@@ -107,6 +132,7 @@ model Precio {
 
 model MovimientoInventario {
   id         String @id @default(uuid())
+  negocioId  String?
   productoId String
 
   tipo     TipoMovimiento
@@ -116,12 +142,16 @@ model MovimientoInventario {
   createdAt DateTime @default(now())
 
   producto Producto @relation(fields: [productoId], references: [id])
+  negocio  Negocio?  @relation(fields: [negocioId], references: [id])
 }
 
 enum MetodoPago {
   EFECTIVO
   TARJETA
   TRANSFERENCIA
+  PAGO_MOVIL
+  EFECTIVO_USD
+  EFECTIVO_VES
 }
 
 enum EstadoVenta {
@@ -132,6 +162,7 @@ enum EstadoVenta {
 
 model Cliente {
   id        String  @id @default(uuid())
+  negocioId String?
   nombre    String
   documento String?
   telefono  String?
@@ -140,18 +171,21 @@ model Cliente {
 
   ventas Venta[]
 
+  negocio   Negocio?  @relation(fields: [negocioId], references: [id])
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@unique([documento, negocioId])
   @@index([nombre])
   @@index([documento])
 }
 
 model Venta {
-  id String @id @default(uuid())
+  id        String @id @default(uuid())
+  negocioId String?
 
   // Folio / número (lo generas en backend)
-  numero String @unique
+  numero String
 
   // Cliente opcional
   clienteId String?
@@ -170,9 +204,11 @@ model Venta {
   detalles VentaDetalle[]
   pagos    VentaPago[]
 
+  negocio   Negocio?  @relation(fields: [negocioId], references: [id])
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@unique([numero, negocioId])
   @@index([createdAt])
   @@index([clienteId])
 }

@@ -9,7 +9,7 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
 
   try {
     const payload = verifyAccessToken(token);
-    (req as any).auth = payload; // { sub, role }
+    (req as any).auth = payload; // { sub, role, negocioId }
     next();
   } catch {
     return res.status(401).json({ message: "Token inválido/expirado" });

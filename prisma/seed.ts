@@ -1,14 +1,4 @@
-import "dotenv/config";
-import { PrismaClient } from "../src/generated/prisma/client.js"; // import del cliente de prisma
-import { PrismaPg } from "@prisma/adapter-pg";
-import { Pool } from "pg";
-
-const connectionString = process.env.DATABASE_URL;
-if (!connectionString) throw new Error("DATABASE_URL no está definida");
-
-const pool = new Pool({ connectionString });
-const adapter = new PrismaPg(pool);
-export const prisma = new PrismaClient({ adapter });
+import { prisma } from "../src/config/db.config.js";
 import argon2 from "argon2";
 
 
@@ -18,29 +8,35 @@ async function main() {
     .trim();
 
   const password = process.env.SUPERADMIN_PASSWORD ?? "Kevinsolarte1.";
-
   const passwordHash = await argon2.hash(password);
 
-  // Upsert: si existe lo deja, si no existe lo crea
+  // 1. Asegurar que existe un negocio
+  const negocio = await prisma.negocio.upsert({
+    where: { ruc: "000000000" },
+    update: {},
+    create: {
+      nombre: "Mi Primer Negocio",
+      ruc: "000000000",
+      direccion: "Calle Principal",
+      telefono: "555-0000"
+    }
+  });
+
+  // 2. Upsert SuperAdmin vinculado al negocio
   const user = await prisma.user.upsert({
     where: { email },
-    update: {
-      // si quieres actualizar la clave en cada seed, descomenta:
-      // passwordHash,
-    },
+    update: { negocioId: negocio.id },
     create: {
       name: "KEVIN SOLARTE",
       email,
       passwordHash,
       role: "SUPERADMIN",
+      negocioId: negocio.id
     },
     select: { id: true, name: true, email: true, role: true, createdAt: true },
   });
 
-  console.log("✅ SUPERADMIN listo:", user);
-  console.log("📧 Email:", email);
-  console.log("🔑 Password:", password);
-  console.log("⚠️ Cámbiala luego del primer login.");
+  console.log("✅ SUPERADMIN listo vinculado a:", negocio.nombre);
 }
 
 main()
