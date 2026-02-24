@@ -114,7 +114,7 @@ export const inventarioRepository = {
         });
     },
     async getInventario(negocioId: string) {
-        return await prisma.inventario.findMany({
+        const productos = await prisma.inventario.findMany({
             where: {
                 producto: {
                     negocioId,
@@ -129,6 +129,24 @@ export const inventarioRepository = {
                 }
             }
         });
+
+        let capitalInventario = 0;
+        let gananciaEstimada = 0;
+
+        for (const item of productos) {
+            const stock = item.stockActual.toNumber();
+            const costo = item.producto.precio?.preciocompra.toNumber() ?? 0;
+            const venta = item.producto.precio?.precioDetal.toNumber() ?? 0;
+
+            capitalInventario += stock * costo;
+            gananciaEstimada += stock * (venta - costo);
+        }
+
+        return {
+            productos,
+            capitalInventario,
+            gananciaEstimada
+        };
     },
     async addStock(negocioId: string, productoId: string, cantidad: number, motivo: string) {
         return await prisma.$transaction(async (tx) => {
