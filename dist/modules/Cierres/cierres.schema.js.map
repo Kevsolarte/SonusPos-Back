@@ -1,0 +1,1 @@
+{"version":3,"file":"cierres.schema.js","sourceRoot":"","sources":["../../../src/modules/Cierres/cierres.schema.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,CAAC,EAAE,MAAM,KAAK,CAAC;AAExB,MAAM,CAAC,MAAM,kBAAkB,GAAG,CAAC,CAAC,MAAM,CAAC;IACvC,kFAAkF;IAClF,WAAW,EAAE,CAAC,CAAC,MAAM,CAAC,CAAC,CAAC,MAAM,EAAE,EAAE,CAAC,CAAC,MAAM,EAAE,CAAC,CAAC,QAAQ,EAAE;CAC3D,CAAC,CAAC"}

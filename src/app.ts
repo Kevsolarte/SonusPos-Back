@@ -5,6 +5,8 @@ import { inventarioRoutes } from "./modules/Inventario/inventario.routes.js";
 import { ventasRoutes } from "./modules/ventas/ventas.routes.js";
 import reportesRoutes from "./modules/ventas/reportes.routes.js";
 import clienteRoutes from "./modules/Clientes/cliente.routes.js";
+import movimientosRoutes from "./modules/Movimientos/movimientos.routes.js";
+import cierresRoutes from "./modules/Cierres/cierres.routes.js";
 import { errorHandler } from "./middlewares/errorhandler.js";
 
 export const app = express();
@@ -40,5 +42,7 @@ app.use("/inventario", inventarioRoutes);
 app.use("/pos", ventasRoutes);
 app.use("/reportes", reportesRoutes);
 app.use("/clientes", clienteRoutes);
+app.use("/movimientos", movimientosRoutes);
+app.use("/cierres", cierresRoutes);
 
 app.use(errorHandler);

@@ -30,7 +30,8 @@ export const inventarioController = {
     },
     async getInventario(req, res) {
         const { negocioId } = req.auth;
-        const inventario = await inventarioService.getInventario(negocioId);
+        const { page, limit, search } = req.query;
+        const inventario = await inventarioService.getInventario(negocioId, page ? parseInt(page) : undefined, limit ? parseInt(limit) : undefined, search);
         return res.status(200).json(inventario);
     },
     async deleteProducto(req, res) {

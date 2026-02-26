@@ -29,9 +29,11 @@ export const clienteController = {
 
     async getAll(req: Request, res: Response) {
         const negocioId = (req as any).auth.negocioId;
+        const page = parseInt(req.query.page as string) || 1;
+        const limit = parseInt(req.query.limit as string) || 50;
         const search = req.query.search as string | undefined;
-        const clientes = await clienteService.obtenerClientes(negocioId, search);
-        res.json(clientes);
+        const result = await clienteService.obtenerClientes(negocioId, page, limit, search);
+        res.json(result);
     },
 
     async getById(req: Request, res: Response) {

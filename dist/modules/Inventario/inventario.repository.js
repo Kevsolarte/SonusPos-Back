@@ -82,15 +82,16 @@ export const inventarioRepository = {
         });
     },
     async findByNombre(negocioId, nombre, codigoBarra, excludeId) {
+        const OR = [{ nombre: nombre }];
+        if (codigoBarra) {
+            OR.push({ codigoBarra: codigoBarra });
+        }
         return await prisma.producto.findFirst({
             where: {
                 negocioId,
                 activo: true,
                 ...(excludeId ? { NOT: { id: excludeId } } : {}),
-                OR: [
-                    { nombre: nombre },
-                    { codigoBarra: codigoBarra }
-                ]
+                OR
             }
         });
     },
@@ -103,22 +104,81 @@ export const inventarioRepository = {
             }
         });
     },
-    async getInventario(negocioId) {
-        return await prisma.inventario.findMany({
-            where: {
-                producto: {
-                    negocioId,
-                    activo: true
+    async getInventario(negocioId, page = 1, limit = 50, search = "") {
+        const skip = (page - 1) * limit;
+        // 1. Filtro base
+        const where = {
+            producto: {
+                negocioId,
+                activo: true,
+                ...(search ? {
+                    OR: [
+                        { nombre: { contains: search, mode: 'insensitive' } },
+                        { codigoBarra: { contains: search, mode: 'insensitive' } }
+                    ]
+                } : {})
+            }
+        };
+        // 2. Consulta paginada y conteo
+        const [productos, total] = await Promise.all([
+            prisma.inventario.findMany({
+                where,
+                include: {
+                    producto: {
+                        include: {
+                            precio: true
+                        }
+                    }
+                },
+                skip,
+                take: limit,
+                orderBy: {
+                    producto: { nombre: 'asc' }
                 }
-            },
-            include: {
-                producto: {
-                    include: {
-                        precio: true
+            }),
+            prisma.inventario.count({ where })
+        ]);
+        let capitalInventario = 0;
+        let gananciaEstimada = 0;
+        // 3. Cálculos de totales (Opcional: Solo en primera página sin búsqueda para ahorrar recursos)
+        if (page === 1 && !search) {
+            const todos = await prisma.inventario.findMany({
+                where: {
+                    producto: {
+                        negocioId,
+                        activo: true
+                    }
+                },
+                select: {
+                    stockActual: true,
+                    producto: {
+                        select: {
+                            precio: {
+                                select: {
+                                    preciocompra: true,
+                                    precioDetal: true
+                                }
+                            }
+                        }
                     }
                 }
+            });
+            for (const item of todos) {
+                const stock = item.stockActual.toNumber();
+                const costo = item.producto.precio?.preciocompra.toNumber() ?? 0;
+                const venta = item.producto.precio?.precioDetal.toNumber() ?? 0;
+                capitalInventario += stock * costo;
+                gananciaEstimada += stock * (venta - costo);
             }
-        });
+        }
+        return {
+            productos,
+            total,
+            page,
+            totalPages: Math.ceil(total / limit),
+            capitalInventario,
+            gananciaEstimada
+        };
     },
     async addStock(negocioId, productoId, cantidad, motivo) {
         return await prisma.$transaction(async (tx) => {

@@ -58,8 +58,20 @@ export const authService = {
         // En un SaaS real, le asignaríamos uno o tendría acceso global.
         const accessToken = signAccessToken(user.id, user.role, user.negocioId || "");
 
+        const userFull = await prisma.user.findUnique({
+            where: { id: user.id },
+            include: { negocio: true }
+        });
+
         return {
-            user: { id: user.id, name: user.name, email: user.email, role: user.role, negocioId: user.negocioId },
+            user: {
+                id: user.id,
+                name: user.name,
+                email: user.email,
+                role: user.role,
+                negocioId: user.negocioId,
+                negocio: userFull?.negocio || null
+            },
             accessToken,
         };
     },

@@ -30,7 +30,7 @@ export const clienteRepository = {
         });
     },
 
-    async findAll(negocioId: string, search?: string) {
+    async findAll(negocioId: string, page = 1, limit = 50, search?: string) {
         const where: Prisma.ClienteWhereInput = { negocioId };
 
         if (search) {
@@ -40,10 +40,25 @@ export const clienteRepository = {
             ];
         }
 
-        return await prisma.cliente.findMany({
-            where,
-            orderBy: { nombre: "asc" },
-        });
+        const skip = (page - 1) * limit;
+
+        const [clientes, total] = await Promise.all([
+            prisma.cliente.findMany({
+                where,
+                skip,
+                take: limit,
+                orderBy: { nombre: "asc" },
+            }),
+            prisma.cliente.count({ where })
+        ]);
+
+        return {
+            clientes,
+            total,
+            page,
+            limit,
+            totalPages: Math.ceil(total / limit)
+        };
     },
 
     async findByDocumento(documento: string, negocioId: string) {

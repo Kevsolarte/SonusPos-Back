@@ -158,7 +158,9 @@ export const ventasService = {
         return await this.calcularTotalesVenta(negocioId, body.detalles);
     },
     async getVentasHistory(negocioId, filters) {
-        const where = { negocioId };
+        const where = {
+            negocioId
+        };
         if (filters.startDate || filters.endDate) {
             const dateFilter = {};
             if (filters.startDate)
@@ -172,17 +174,41 @@ export const ventasService = {
                 some: { metodo: filters.metodoPago }
             };
         }
-        return await prisma.venta.findMany({
-            where,
-            include: {
-                cliente: true,
-                pagos: true,
-                detalles: {
-                    include: { producto: true }
-                }
-            },
-            orderBy: { createdAt: 'desc' }
-        });
+        if (filters.estado) {
+            where.estado = filters.estado;
+        }
+        if (filters.search) {
+            where.OR = [
+                { numero: { contains: filters.search, mode: 'insensitive' } },
+                { cliente: { nombre: { contains: filters.search, mode: 'insensitive' } } }
+            ];
+        }
+        const page = filters.page || 1;
+        const limit = filters.limit || 50;
+        const skip = (page - 1) * limit;
+        const [ventas, total] = await Promise.all([
+            prisma.venta.findMany({
+                where,
+                include: {
+                    cliente: true,
+                    pagos: true,
+                    detalles: {
+                        include: { producto: true }
+                    }
+                },
+                skip,
+                take: limit,
+                orderBy: { createdAt: 'desc' }
+            }),
+            prisma.venta.count({ where })
+        ]);
+        return {
+            ventas,
+            total,
+            page,
+            limit,
+            totalPages: Math.ceil(total / limit)
+        };
     },
     async getVentasStats(negocioId, date) {
         const targetDate = date ? new Date(date) : new Date();
@@ -193,6 +219,7 @@ export const ventasService = {
                 where: {
                     negocioId,
                     estado: 'PAGADA',
+                    cierreId: null, // Solo ventas activas
                     createdAt: {
                         gte: startOfDay,
                         lte: endOfDay
@@ -215,8 +242,8 @@ export const ventasService = {
         const totalAnuladasUSD = ventasAnuladas.reduce((acc, v) => acc.plus(v.total), new Prisma.Decimal(0));
         // Desglose por método de pago
         const porMetodo = {};
-        ventas.forEach(v => {
-            v.pagos.forEach(p => {
+        ventas.forEach((v) => {
+            v.pagos?.forEach((p) => {
                 const m = p.metodo.toString();
                 porMetodo[m] = (porMetodo[m] || 0) + Number(p.monto);
             });

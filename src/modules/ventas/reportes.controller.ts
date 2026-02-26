@@ -4,12 +4,16 @@ import { ventasService } from "./ventas.service.js";
 export const reportesController = {
     async getHistory(req: Request, res: Response) {
         const negocioId = (req as any).auth.negocioId;
-        const { startDate, endDate, metodoPago } = req.query;
+        const { startDate, endDate, metodoPago, estado, search, page, limit } = req.query;
 
         const history = await ventasService.getVentasHistory(negocioId, {
             startDate: startDate as string,
             endDate: endDate as string,
-            metodoPago: metodoPago as string
+            metodoPago: metodoPago as string,
+            estado: estado as string,
+            search: search as string,
+            page: page ? parseInt(page as string) : 1,
+            limit: limit ? parseInt(limit as string) : 50
         });
 
         res.json(history);

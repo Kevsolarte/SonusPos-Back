@@ -34,7 +34,14 @@ export const inventarioController = {
     },
     async getInventario(req: Request, res: Response) {
         const { negocioId } = (req as any).auth;
-        const inventario = await inventarioService.getInventario(negocioId);
+        const { page, limit, search } = req.query;
+
+        const inventario = await inventarioService.getInventario(
+            negocioId,
+            page ? parseInt(page as string) : undefined,
+            limit ? parseInt(limit as string) : undefined,
+            search as string
+        );
         return res.status(200).json(inventario);
     },
 

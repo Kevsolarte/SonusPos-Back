@@ -1,49 +1,192 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
- 
 }
 
 model Negocio {
-  id        String   @id @default(uuid())
-  nombre    String
-  ruc       String?  @unique
-  direccion String?
-  telefono  String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  users       User[]
-  productos   Producto[]
+  id          String                 @id @default(uuid())
+  nombre      String
+  ruc         String?                @unique
+  direccion   String?
+  telefono    String?
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+  cierres     Cierre[]
   clientes    Cliente[]
-  ventas      Venta[]
   movimientos MovimientoInventario[]
-}
-
-enum Role {
-  SUPERADMIN
-  ADMIN
+  productos   Producto[]
+  users       User[]
+  ventas      Venta[]
 }
 
 model User {
   id           String   @id @default(uuid())
   name         String
   email        String   @unique
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
   passwordHash String
   role         Role
   negocioId    String?
+  cierres      Cierre[]
   negocio      Negocio? @relation(fields: [negocioId], references: [id])
-  createdAt    DateTime @default(now())
+}
+
+model Producto {
+  id             String                 @id @default(uuid())
+  nombre         String
+  codigoBarra    String?
+  descripcion    String?
+  tipoVenta      TipoVenta
+  unidadMedida   UnidadMedida
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  negocioId      String?
+  activo         Boolean                @default(true)
+  imagenUrl      String?
+  inventario     Inventario?
+  movimientos    MovimientoInventario[]
+  precio         Precio?
+  negocio        Negocio?               @relation(fields: [negocioId], references: [id])
+  ventadDetalles VentaDetalle[]
+
+  @@unique([nombre, negocioId])
+  @@unique([codigoBarra, negocioId])
+}
+
+model Inventario {
+  id              String   @id @default(uuid())
+  productoId      String   @unique
+  stockActual     Decimal  @db.Decimal(10, 3)
+  stockMin        Decimal? @db.Decimal(10, 3)
+  stockMax        Decimal? @db.Decimal(10, 3)
+  alertastockbaja Boolean?
+  ubicacion       String?
+  updatedAt       DateTime @updatedAt
+  producto        Producto @relation(fields: [productoId], references: [id])
+}
+
+model Precio {
+  id           String   @id @default(uuid())
+  productoId   String   @unique
+  preciocompra Decimal  @db.Decimal(10, 3)
+  precioDetal  Decimal  @db.Decimal(10, 2)
+  precioMayor  Decimal? @db.Decimal(10, 2)
   updatedAt    DateTime @updatedAt
+  createdAt    DateTime @default(now())
+  producto     Producto @relation(fields: [productoId], references: [id])
+}
+
+model MovimientoInventario {
+  id         String         @id @default(uuid())
+  productoId String
+  tipo       TipoMovimiento
+  cantidad   Decimal        @db.Decimal(10, 2)
+  motivo     String?
+  createdAt  DateTime       @default(now())
+  negocioId  String?
+  negocio    Negocio?       @relation(fields: [negocioId], references: [id])
+  producto   Producto       @relation(fields: [productoId], references: [id])
+}
+
+model Cliente {
+  id        String   @id @default(uuid())
+  nombre    String
+  documento String?
+  telefono  String?
+  email     String?
+  direccion String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  negocioId String?
+  negocio   Negocio? @relation(fields: [negocioId], references: [id])
+  ventas    Venta[]
+
+  @@unique([documento, negocioId])
+  @@index([nombre])
+  @@index([documento])
+}
+
+model Venta {
+  id        String         @id @default(uuid())
+  numero    String
+  clienteId String?
+  estado    EstadoVenta    @default(PAGADA)
+  subtotal  Decimal        @db.Decimal(10, 2)
+  descuento Decimal        @default(0) @db.Decimal(10, 2)
+  impuesto  Decimal        @default(0) @db.Decimal(10, 2)
+  total     Decimal        @db.Decimal(10, 2)
+  nota      String?
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  negocioId String?
+  cierreId  String?
+  cierre    Cierre?        @relation(fields: [cierreId], references: [id])
+  cliente   Cliente?       @relation(fields: [clienteId], references: [id])
+  negocio   Negocio?       @relation(fields: [negocioId], references: [id])
+  detalles  VentaDetalle[]
+  pagos     VentaPago[]
+
+  @@unique([numero, negocioId])
+  @@index([createdAt])
+  @@index([clienteId])
+  @@index([cierreId])
+}
+
+model Cierre {
+  id           String   @id @default(uuid())
+  negocioId    String
+  userId       String
+  totalVentas  Decimal  @db.Decimal(10, 2)
+  cantVentas   Int
+  detallePagos Json?
+  createdAt    DateTime @default(now())
+  negocio      Negocio  @relation(fields: [negocioId], references: [id])
+  user         User     @relation(fields: [userId], references: [id])
+  ventas       Venta[]
+
+  @@index([negocioId])
+}
+
+model VentaDetalle {
+  id             String       @id @default(uuid())
+  ventaId        String
+  productoId     String
+  cantidad       Decimal      @db.Decimal(10, 3)
+  precioUnitario Decimal      @db.Decimal(10, 2)
+  subtotal       Decimal      @db.Decimal(10, 2)
+  tipoVenta      TipoVenta
+  unidadMedida   UnidadMedida
+  createdAt      DateTime     @default(now())
+  producto       Producto     @relation(fields: [productoId], references: [id])
+  venta          Venta        @relation(fields: [ventaId], references: [id], onDelete: Cascade)
+
+  @@index([ventaId])
+  @@index([productoId])
+}
+
+model VentaPago {
+  id         String     @id @default(uuid())
+  ventaId    String
+  metodo     MetodoPago
+  monto      Decimal    @db.Decimal(10, 2)
+  referencia String?
+  ultimos4   String?
+  recibido   Decimal?   @db.Decimal(10, 2)
+  cambio     Decimal?   @db.Decimal(10, 2)
+  createdAt  DateTime   @default(now())
+  venta      Venta      @relation(fields: [ventaId], references: [id], onDelete: Cascade)
+
+  @@index([ventaId])
+  @@index([metodo])
+}
+
+enum Role {
+  SUPERADMIN
+  ADMIN
 }
 
 enum TipoVenta {
@@ -67,85 +210,6 @@ enum TipoMovimiento {
   AJUSTE
 }
 
-model Producto {
-  id          String  @id @default(uuid())
-  negocioId   String?
-  nombre      String
-  codigoBarra String?
-  descripcion String?
-  imagenUrl   String?
-
-  tipoVenta    TipoVenta
-  unidadMedida UnidadMedida
-
-  ventadDetalles VentaDetalle[]
-
-  inventario  Inventario?
-  precio      Precio?
-  movimientos MovimientoInventario[]
-
-  negocio   Negocio? @relation(fields: [negocioId], references: [id])
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  activo    Boolean  @default(true)
-
-  @@unique([nombre, negocioId])
-  @@unique([codigoBarra, negocioId])
-}
-
-// -----------------------
-
-model Inventario {
-  id         String @id @default(uuid())
-  productoId String @unique
-
-  stockActual Decimal  @db.Decimal(10, 3)
-  stockMin    Decimal? @db.Decimal(10, 3)
-  stockMax    Decimal? @db.Decimal(10, 3)
-
-  alertastockbaja Boolean?
-
-  ubicacion String?
-
-  producto Producto @relation(fields: [productoId], references: [id])
-
-  updatedAt DateTime @updatedAt
-}
-
-// -----------------------
-
-model Precio {
-  id         String @id @default(uuid())
-  productoId String @unique
-
-  preciocompra Decimal @db.Decimal(10, 3)
-
-  precioDetal Decimal  @db.Decimal(10, 2)
-  precioMayor Decimal? @db.Decimal(10, 2)
-
-  producto Producto @relation(fields: [productoId], references: [id])
-
-  updatedAt DateTime @updatedAt
-  createdAt DateTime @default(now())
-}
-
-// -----------------------
-
-model MovimientoInventario {
-  id         String @id @default(uuid())
-  negocioId  String?
-  productoId String
-
-  tipo     TipoMovimiento
-  cantidad Decimal        @db.Decimal(10, 2)
-  motivo   String?
-
-  createdAt DateTime @default(now())
-
-  producto Producto @relation(fields: [productoId], references: [id])
-  negocio  Negocio?  @relation(fields: [negocioId], references: [id])
-}
-
 enum MetodoPago {
   EFECTIVO
   TARJETA
@@ -159,104 +223,4 @@ enum EstadoVenta {
   ABIERTA
   PAGADA
   ANULADA
-}
-
-model Cliente {
-  id        String  @id @default(uuid())
-  negocioId String?
-  nombre    String
-  documento String?
-  telefono  String?
-  email     String?
-  direccion String?
-
-  ventas Venta[]
-
-  negocio   Negocio?  @relation(fields: [negocioId], references: [id])
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([documento, negocioId])
-  @@index([nombre])
-  @@index([documento])
-}
-
-model Venta {
-  id        String @id @default(uuid())
-  negocioId String?
-
-  // Folio / número (lo generas en backend)
-  numero String
-
-  // Cliente opcional
-  clienteId String?
-  cliente   Cliente? @relation(fields: [clienteId], references: [id])
-
-  estado EstadoVenta @default(PAGADA)
-
-  // Totales (calculados por backend)
-  subtotal  Decimal @db.Decimal(10, 2)
-  descuento Decimal @default(0) @db.Decimal(10, 2)
-  impuesto  Decimal @default(0) @db.Decimal(10, 2)
-  total     Decimal @db.Decimal(10, 2)
-
-  nota String?
-
-  detalles VentaDetalle[]
-  pagos    VentaPago[]
-
-  negocio   Negocio?  @relation(fields: [negocioId], references: [id])
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([numero, negocioId])
-  @@index([createdAt])
-  @@index([clienteId])
-}
-
-model VentaDetalle {
-  id String @id @default(uuid())
-
-  ventaId String
-  venta   Venta  @relation(fields: [ventaId], references: [id], onDelete: Cascade)
-
-  productoId String
-  producto   Producto @relation(fields: [productoId], references: [id])
-
-  // Cantidad vendida (PESO admite decimal; UNIDAD se valida en Zod/backend)
-  cantidad Decimal @db.Decimal(10, 3)
-
-  // Precios/totales (calculados por backend al momento de la venta)
-  precioUnitario Decimal @db.Decimal(10, 2)
-  subtotal       Decimal @db.Decimal(10, 2)
-
-  // Snapshot del producto para auditoría
-  tipoVenta    TipoVenta
-  unidadMedida UnidadMedida
-
-  createdAt DateTime @default(now())
-
-  @@index([ventaId])
-  @@index([productoId])
-}
-
-model VentaPago {
-  id String @id @default(uuid())
-
-  ventaId String
-  venta   Venta  @relation(fields: [ventaId], references: [id], onDelete: Cascade)
-
-  metodo MetodoPago
-  monto  Decimal    @db.Decimal(10, 2)
-
-  // Opcionales por método
-  referencia String?
-  ultimos4   String?
-  recibido   Decimal? @db.Decimal(10, 2)
-  cambio     Decimal? @db.Decimal(10, 2)
-
-  createdAt DateTime @default(now())
-
-  @@index([ventaId])
-  @@index([metodo])
 }

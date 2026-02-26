@@ -60,8 +60,8 @@ export const clienteService = {
         return await clienteRepository.delete(id, negocioId);
     },
 
-    async obtenerClientes(negocioId: string, search?: string) {
-        return await clienteRepository.findAll(negocioId, search);
+    async obtenerClientes(negocioId: string, page?: number, limit?: number, search?: string) {
+        return await clienteRepository.findAll(negocioId, page, limit, search);
     },
 
     async obtenerClientePorId(id: string, negocioId: string) {

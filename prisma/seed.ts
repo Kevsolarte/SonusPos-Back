@@ -7,9 +7,7 @@ import argon2 from "argon2";
 // Pool con TLS desactivado (porque Supabase + self-signed)
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false,
-  },
+  ssl: process.env.DATABASE_URL?.includes('supabase') ? { rejectUnauthorized: false } : false,
 });
 
 const adapter = new PrismaPg(pool);

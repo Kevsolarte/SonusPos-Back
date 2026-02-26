@@ -1,6 +1,6 @@
 import { prisma } from "../../config/db.config.js";
 import { createVentaFullSchema, calcularTotalesSchema } from "./ventas.schema.js";
-import  { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { AppError } from "../../middlewares/error.middleware.js";
 
 function makeVentaNumero() {
@@ -183,14 +183,16 @@ export const ventasService = {
         return await this.calcularTotalesVenta(negocioId, body.detalles);
     },
 
-    async getVentasHistory(negocioId: string, filters: { startDate?: string, endDate?: string, metodoPago?: string }) {
-        const where: Prisma.VentaWhereInput = { negocioId };
+    async getVentasHistory(negocioId: string, filters: { startDate?: string, endDate?: string, metodoPago?: string, estado?: string, search?: string, page?: number, limit?: number }) {
+        const where: any = {
+            negocioId
+        };
 
         if (filters.startDate || filters.endDate) {
             const dateFilter: Prisma.DateTimeFilter = {};
             if (filters.startDate) dateFilter.gte = new Date(filters.startDate);
             if (filters.endDate) dateFilter.lte = new Date(filters.endDate);
-            where.createdAt = dateFilter;
+            (where as any).createdAt = dateFilter;
         }
 
         if (filters.metodoPago) {
@@ -199,17 +201,45 @@ export const ventasService = {
             };
         }
 
-        return await prisma.venta.findMany({
-            where,
-            include: {
-                cliente: true,
-                pagos: true,
-                detalles: {
-                    include: { producto: true }
-                }
-            },
-            orderBy: { createdAt: 'desc' }
-        });
+        if (filters.estado) {
+            where.estado = filters.estado as any;
+        }
+
+        if (filters.search) {
+            where.OR = [
+                { numero: { contains: filters.search, mode: 'insensitive' } },
+                { cliente: { nombre: { contains: filters.search, mode: 'insensitive' } } }
+            ];
+        }
+
+        const page = filters.page || 1;
+        const limit = filters.limit || 50;
+        const skip = (page - 1) * limit;
+
+        const [ventas, total] = await Promise.all([
+            prisma.venta.findMany({
+                where,
+                include: {
+                    cliente: true,
+                    pagos: true,
+                    detalles: {
+                        include: { producto: true }
+                    }
+                },
+                skip,
+                take: limit,
+                orderBy: { createdAt: 'desc' }
+            }),
+            prisma.venta.count({ where })
+        ]);
+
+        return {
+            ventas,
+            total,
+            page,
+            limit,
+            totalPages: Math.ceil(total / limit)
+        };
     },
 
     async getVentasStats(negocioId: string, date?: string) {
@@ -222,11 +252,12 @@ export const ventasService = {
                 where: {
                     negocioId,
                     estado: 'PAGADA',
+                    cierreId: null, // Solo ventas activas
                     createdAt: {
                         gte: startOfDay,
                         lte: endOfDay
                     }
-                },
+                } as any,
                 include: { pagos: true }
             }),
             prisma.venta.findMany({
@@ -246,8 +277,8 @@ export const ventasService = {
 
         // Desglose por método de pago
         const porMetodo: Record<string, number> = {};
-        ventas.forEach(v => {
-            v.pagos.forEach(p => {
+        ventas.forEach((v: any) => {
+            v.pagos?.forEach((p: any) => {
                 const m = p.metodo.toString();
                 porMetodo[m] = (porMetodo[m] || 0) + Number(p.monto);
             });

@@ -90,16 +90,19 @@ export const inventarioRepository = {
         });
     },
 
-    async findByNombre(negocioId: string, nombre: string, codigoBarra: string, excludeId?: string) {
+    async findByNombre(negocioId: string, nombre: string, codigoBarra: string | null, excludeId?: string) {
+        const OR: any[] = [{ nombre: nombre }];
+
+        if (codigoBarra) {
+            OR.push({ codigoBarra: codigoBarra });
+        }
+
         return await prisma.producto.findFirst({
             where: {
                 negocioId,
                 activo: true,
                 ...(excludeId ? { NOT: { id: excludeId } } : {}),
-                OR: [
-                    { nombre: nombre },
-                    { codigoBarra: codigoBarra }
-                ]
+                OR
             } as any
         });
     },
@@ -113,37 +116,85 @@ export const inventarioRepository = {
             }
         });
     },
-    async getInventario(negocioId: string) {
-        const productos = await prisma.inventario.findMany({
-            where: {
-                producto: {
-                    negocioId,
-                    activo: true
-                } as any
-            },
-            include: {
-                producto: {
-                    include: {
-                        precio: true
-                    }
-                }
+    async getInventario(negocioId: string, page = 1, limit = 50, search = "") {
+        const skip = (page - 1) * limit;
+
+        // 1. Filtro base
+        const where: any = {
+            producto: {
+                negocioId,
+                activo: true,
+                ...(search ? {
+                    OR: [
+                        { nombre: { contains: search, mode: 'insensitive' } },
+                        { codigoBarra: { contains: search, mode: 'insensitive' } }
+                    ]
+                } : {})
             }
-        });
+        };
+
+        // 2. Consulta paginada y conteo
+        const [productos, total] = await Promise.all([
+            prisma.inventario.findMany({
+                where,
+                include: {
+                    producto: {
+                        include: {
+                            precio: true
+                        }
+                    }
+                },
+                skip,
+                take: limit,
+                orderBy: {
+                    producto: { nombre: 'asc' }
+                }
+            }),
+            prisma.inventario.count({ where })
+        ]);
 
         let capitalInventario = 0;
         let gananciaEstimada = 0;
 
-        for (const item of productos) {
-            const stock = item.stockActual.toNumber();
-            const costo = item.producto.precio?.preciocompra.toNumber() ?? 0;
-            const venta = item.producto.precio?.precioDetal.toNumber() ?? 0;
+        // 3. Cálculos de totales (Opcional: Solo en primera página sin búsqueda para ahorrar recursos)
+        if (page === 1 && !search) {
+            const todos = await prisma.inventario.findMany({
+                where: {
+                    producto: {
+                        negocioId,
+                        activo: true
+                    }
+                },
+                select: {
+                    stockActual: true,
+                    producto: {
+                        select: {
+                            precio: {
+                                select: {
+                                    preciocompra: true,
+                                    precioDetal: true
+                                }
+                            }
+                        }
+                    }
+                }
+            });
 
-            capitalInventario += stock * costo;
-            gananciaEstimada += stock * (venta - costo);
+            for (const item of todos) {
+                const stock = item.stockActual.toNumber();
+                const costo = item.producto.precio?.preciocompra.toNumber() ?? 0;
+                const venta = item.producto.precio?.precioDetal.toNumber() ?? 0;
+
+                capitalInventario += stock * costo;
+                gananciaEstimada += stock * (venta - costo);
+            }
         }
 
         return {
             productos,
+            total,
+            page,
+            totalPages: Math.ceil(total / limit),
             capitalInventario,
             gananciaEstimada
         };
