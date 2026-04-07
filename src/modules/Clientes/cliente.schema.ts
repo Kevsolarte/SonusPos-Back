@@ -13,3 +13,6 @@ export const createClienteSchema = z.object({
 });
 
 export const updateClienteSchema = createClienteSchema.partial();
+
+export type createClienteType = z.infer<typeof createClienteSchema>;
+export type updateClienteType = z.infer<typeof updateClienteSchema>;

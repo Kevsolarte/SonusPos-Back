@@ -15,21 +15,17 @@ export const createProductoSchema = z.object({
     // Tipo de Venta (PESO o UNIDAD)
     tipoVenta: z.enum(["PESO", "UNIDAD"]).optional().default("UNIDAD"),
 
-    // Solo permitimos nuestras unidades oficiales
+    // Solo permitimos nuestras unidades oficiales por los momentos
     unidadMedida: z.enum(["KG", "G", "L", "ML", "UNIDAD", "PZA"]),
     inventario: z.object({
-        // El stock no puede ser negativo
         stockActual: z.number().min(0, "El stock inicial no puede ser negativo"),
         stockMin: z.number().min(0, "El stock mínimo no puede ser negativo"),
-        // Stock máximo opcional, pero si viene debe ser mayor a 0
         stockMax: z.number().min(1, "El stock máximo debe ser al menos 1").optional().default(1000),
         ubicacion: z.string().max(100).optional().nullable(),
     }),
     precio: z.object({
-        // Los precios deben ser mayores a 0 siempre
         preciocompra: z.number().positive("El precio de compra debe ser mayor a 0"),
         precioDetal: z.number().positive("El precio detal debe ser mayor a 0"),
-        // Precio mayor es opcional, si no viene es 0
         precioMayor: z.number().min(0).optional().default(0),
     })
 });
@@ -41,4 +37,8 @@ export const addStockSchema = z.object({
     cantidad: z.number().positive("La cantidad a agregar debe ser mayor a 0"),
     motivo: z.string().optional().default("Reposición de stock")
 });
+
+export type createProductoType = z.infer<typeof createProductoSchema>;
+export type updateProductoType = z.infer<typeof updateProductoSchema>;
+export type addStockType = z.infer<typeof addStockSchema>;
 

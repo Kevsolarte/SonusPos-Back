@@ -4,7 +4,6 @@ import { requireAuth } from "../../middlewares/auth.middleware.js";
 
 const router = Router();
 
-// Todas las rutas de reportes requieren autenticación
 router.use(requireAuth);
 
 router.get("/historial", reportesController.getHistory);

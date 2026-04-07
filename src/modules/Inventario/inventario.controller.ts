@@ -3,7 +3,6 @@ import { inventarioService, } from "./inventario.service.js";
 import { createProductoSchema, updateProductoSchema, addStockSchema } from "./inventario.schema.js";
 
 export const inventarioController = {
-    // ... existing methods ...
 
     async addStock(req: Request, res: Response) {
         const { negocioId } = (req as any).auth;

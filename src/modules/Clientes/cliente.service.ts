@@ -1,9 +1,9 @@
 import { clienteRepository } from "./cliente.repository.js";
 import { AppError } from "../../middlewares/error.middleware.js";
-import { createClienteSchema, updateClienteSchema } from "./cliente.schema.js";
+import { createClienteSchema, updateClienteSchema, type createClienteType, type updateClienteType } from "./cliente.schema.js";
 
 export const clienteService = {
-    async crearCliente(negocioId: string, dto: unknown) {
+    async crearCliente(negocioId: string, dto: createClienteType) {
         const data = createClienteSchema.parse(dto);
 
         // Verificar si ya existe un cliente con ese documento en el mismo negocio
@@ -12,19 +12,10 @@ export const clienteService = {
             throw new AppError("Ya existe un cliente registrado con ese documento.");
         }
 
-        // Limpiar campos undefined para evitar errores con exactOptionalPropertyTypes
-        const createData = {
-            nombre: data.nombre,
-            documento: data.documento,
-            ...(data.telefono !== undefined && { telefono: data.telefono }),
-            ...(data.email !== undefined && { email: data.email }),
-            ...(data.direccion !== undefined && { direccion: data.direccion }),
-        } as any;
-
-        return await clienteRepository.create(negocioId, createData);
+        return await clienteRepository.create(negocioId, data);
     },
 
-    async actualizarCliente(id: string, negocioId: string, dto: unknown) {
+    async actualizarCliente(id: string, negocioId: string, dto: updateClienteType) {
         const data = updateClienteSchema.parse(dto);
 
         // Verificar existencia antes de actualizar
@@ -41,15 +32,7 @@ export const clienteService = {
             }
         }
 
-        // Limpiar campos undefined
-        const updateData: any = {};
-        if (data.nombre !== undefined) updateData.nombre = data.nombre;
-        if (data.documento !== undefined) updateData.documento = data.documento;
-        if (data.telefono !== undefined) updateData.telefono = data.telefono;
-        if (data.email !== undefined) updateData.email = data.email;
-        if (data.direccion !== undefined) updateData.direccion = data.direccion;
-
-        return await clienteRepository.update(id, negocioId, updateData);
+        return await clienteRepository.update(id, negocioId, data);
     },
 
     async eliminarCliente(id: string, negocioId: string) {

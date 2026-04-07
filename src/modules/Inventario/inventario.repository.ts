@@ -1,42 +1,33 @@
 import { prisma } from "../../config/db.config.js";
-
-
-
-
+import { type createProductoType, type updateProductoType } from "./inventario.schema.js";
 
 export const inventarioRepository = {
-    /**
-     * Crea un producto con su precio, inventario inicial 
-     * y genera el primer movimiento de entrada.
-     */
-    async createProducto(negocioId: string, data: any) {
+    async createProducto(negocioId: string, data: createProductoType) {
         return await prisma.producto.create({
             data: {
                 negocioId,
                 nombre: data.nombre,
-                codigoBarra: data.codigoBarra,
-                descripcion: data.descripcion,
-                tipoVenta: data.tipoVenta || 'UNIDAD',
+                codigoBarra: data.codigoBarra === undefined ? null : data.codigoBarra,
+                descripcion: data.descripcion === undefined ? null : data.descripcion,
+                tipoVenta: data.tipoVenta,
                 unidadMedida: data.unidadMedida,
+                imagenUrl: data.imagenUrl === undefined ? null : data.imagenUrl,
 
-                // Creación del bloque de Precio
                 precio: {
                     create: {
                         preciocompra: data.precio.preciocompra,
                         precioDetal: data.precio.precioDetal,
-                        precioMayor: data.precio.precioMayor || null,
+                        precioMayor: data.precio.precioMayor,
                     }
                 },
-                // Creación del bloque de Inventario
                 inventario: {
                     create: {
                         stockActual: data.inventario.stockActual,
                         stockMin: data.inventario.stockMin,
-                        stockMax: data.inventario.stockMax || 1000,
-                        ubicacion: data.inventario.ubicacion,
+                        stockMax: data.inventario.stockMax,
+                        ubicacion: data.inventario.ubicacion === undefined ? null : data.inventario.ubicacion,
                     }
                 },
-                // Registro automático del primer movimiento (Historial)
                 movimientos: {
                     create: {
                         negocioId,
@@ -46,44 +37,48 @@ export const inventarioRepository = {
                     }
                 }
             },
-            include: {
-                precio: true,
-                inventario: true
-            }
+            include: { precio: true, inventario: true }
         });
     },
 
-    async updateProducto(negocioId: string, id: string, data: any) {
-        // Aseguramos que el producto pertenezca al negocio
+    async updateProducto(negocioId: string, id: string, data: updateProductoType) {
+        const updateData: any = {
+            nombre: data.nombre,
+            codigoBarra: data.codigoBarra === undefined ? undefined : (data.codigoBarra ?? null),
+            descripcion: data.descripcion === undefined ? undefined : (data.descripcion ?? null),
+            unidadMedida: data.unidadMedida,
+            imagenUrl: data.imagenUrl === undefined ? undefined : (data.imagenUrl ?? null),
+        };
+
+        if (data.precio) {
+            updateData.precio = {
+                update: {
+                    preciocompra: data.precio.preciocompra,
+                    precioDetal: data.precio.precioDetal,
+                    precioMayor: data.precio.precioMayor,
+                }
+            };
+        }
+
+        if (data.inventario) {
+            updateData.inventario = {
+                update: {
+                    stockActual: data.inventario.stockActual,
+                    stockMin: data.inventario.stockMin,
+                    stockMax: data.inventario.stockMax,
+                    ubicacion: data.inventario.ubicacion === undefined ? undefined : (data.inventario.ubicacion ?? null),
+                }
+            };
+        }
+
         return await prisma.producto.update({
             where: { id, negocioId },
-            data: {
-                nombre: data.nombre,
-                codigoBarra: data.codigoBarra,
-                descripcion: data.descripcion,
-                unidadMedida: data.unidadMedida,
-                precio: {
-                    update: {
-                        preciocompra: data.precio?.preciocompra,
-                        precioDetal: data.precio?.precioDetal,
-                        precioMayor: data.precio?.precioMayor,
-                    }
-                },
-                inventario: {
-                    update: {
-                        stockActual: data.inventario?.stockActual,
-                        stockMin: data.inventario?.stockMin,
-                        stockMax: data.inventario?.stockMax,
-                        ubicacion: data.inventario?.ubicacion,
-                    }
-                }
-            },
+            data: updateData,
             include: { precio: true, inventario: true }
         });
     },
 
     async deleteProducto(negocioId: string, id: string) {
-        // Soft delete: marcar como inactivo para preservar historial
         return await prisma.producto.update({
             where: { id, negocioId },
             data: { activo: false }
@@ -91,11 +86,8 @@ export const inventarioRepository = {
     },
 
     async findByNombre(negocioId: string, nombre: string, codigoBarra: string | null, excludeId?: string) {
-        const OR: any[] = [{ nombre: nombre }];
-
-        if (codigoBarra) {
-            OR.push({ codigoBarra: codigoBarra });
-        }
+        const OR = [{ nombre: nombre }] as any[];
+        if (codigoBarra) OR.push({ codigoBarra: codigoBarra });
 
         return await prisma.producto.findFirst({
             where: {
@@ -103,23 +95,20 @@ export const inventarioRepository = {
                 activo: true,
                 ...(excludeId ? { NOT: { id: excludeId } } : {}),
                 OR
-            } as any
+            }
         });
     },
 
     async findById(negocioId: string, id: string) {
         return await prisma.producto.findFirst({
-            where: { id, negocioId, activo: true } as any,
-            include: {
-                precio: true,
-                inventario: true
-            }
+            where: { id, negocioId, activo: true },
+            include: { precio: true, inventario: true }
         });
     },
+
     async getInventario(negocioId: string, page = 1, limit = 50, search = "") {
         const skip = (page - 1) * limit;
 
-        // 1. Filtro base
         const where: any = {
             producto: {
                 negocioId,
@@ -133,22 +122,15 @@ export const inventarioRepository = {
             }
         };
 
-        // 2. Consulta paginada y conteo
         const [productos, total] = await Promise.all([
             prisma.inventario.findMany({
                 where,
                 include: {
-                    producto: {
-                        include: {
-                            precio: true
-                        }
-                    }
+                    producto: { include: { precio: true } }
                 },
                 skip,
                 take: limit,
-                orderBy: {
-                    producto: { nombre: 'asc' }
-                }
+                orderBy: { producto: { nombre: 'asc' } }
             }),
             prisma.inventario.count({ where })
         ]);
@@ -156,31 +138,21 @@ export const inventarioRepository = {
         let capitalInventario = 0;
         let gananciaEstimada = 0;
 
-        // 3. Cálculos de totales (Opcional: Solo en primera página sin búsqueda para ahorrar recursos)
+        // Optimización: Solo calcular si no hay búsqueda
         if (page === 1 && !search) {
-            const todos = await prisma.inventario.findMany({
-                where: {
-                    producto: {
-                        negocioId,
-                        activo: true
-                    }
-                },
+            const stats = await prisma.inventario.findMany({
+                where: { producto: { negocioId, activo: true } },
                 select: {
                     stockActual: true,
                     producto: {
                         select: {
-                            precio: {
-                                select: {
-                                    preciocompra: true,
-                                    precioDetal: true
-                                }
-                            }
+                            precio: { select: { preciocompra: true, precioDetal: true } }
                         }
                     }
                 }
             });
 
-            for (const item of todos) {
+            for (const item of stats) {
                 const stock = item.stockActual.toNumber();
                 const costo = item.producto.precio?.preciocompra.toNumber() ?? 0;
                 const venta = item.producto.precio?.precioDetal.toNumber() ?? 0;
@@ -199,9 +171,9 @@ export const inventarioRepository = {
             gananciaEstimada
         };
     },
+
     async addStock(negocioId: string, productoId: string, cantidad: number, motivo: string) {
         return await prisma.$transaction(async (tx) => {
-            // 1. Actualizar Stock
             const producto = await tx.producto.update({
                 where: { id: productoId, negocioId },
                 data: {
@@ -214,7 +186,6 @@ export const inventarioRepository = {
                 include: { inventario: true }
             });
 
-            // 2. Crear Movimiento
             await tx.movimientoInventario.create({
                 data: {
                     negocioId,

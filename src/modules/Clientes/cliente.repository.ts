@@ -1,20 +1,30 @@
 import { prisma } from "../../config/db.config.js";
-import { Prisma } from "@prisma/client";
+import { type createClienteType, type updateClienteType } from "./cliente.schema.js";
 
 export const clienteRepository = {
-    async create(negocioId: string, data: Prisma.ClienteCreateManyInput) {
+    async create(negocioId: string, data: createClienteType) {
         return await prisma.cliente.create({
             data: {
-                ...data,
                 negocioId,
+                nombre: data.nombre,
+                documento: data.documento,
+                telefono: data.telefono,
+                email: data.email,
+                direccion: data.direccion,
             },
         });
     },
 
-    async update(id: string, negocioId: string, data: Prisma.ClienteUpdateInput) {
+    async update(id: string, negocioId: string, data: updateClienteType) {
         return await prisma.cliente.update({
             where: { id, negocioId },
-            data,
+            data: {
+                nombre: data.nombre,
+                documento: data.documento,
+                telefono: data.telefono,
+                email: data.email,
+                direccion: data.direccion,
+            }
         });
     },
 
@@ -31,7 +41,7 @@ export const clienteRepository = {
     },
 
     async findAll(negocioId: string, page = 1, limit = 50, search?: string) {
-        const where: Prisma.ClienteWhereInput = { negocioId };
+        const where: any = { negocioId };
 
         if (search) {
             where.OR = [

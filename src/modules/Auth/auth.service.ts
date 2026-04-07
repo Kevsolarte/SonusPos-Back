@@ -1,37 +1,30 @@
-import { prisma } from "../../config/db.config.js";
+import { authRepository } from "./auth.repository.js";
 import argon2 from "argon2";
-import { loginSchema } from "./auth.schema.js";
+import { loginSchema, createAdminSchema, type loginSchemaType, type createAdminSchemaType } from "./auth.schema.js";
 import { signAccessToken } from "./auth.jwt.js";
 import crypto from "crypto";
-import { createAdminSchema } from "./auth.schema.js";
 import { Prisma } from "@prisma/client";
 
 function generateTempPassword() {
-    return crypto.randomBytes(12).toString("base64url"); // ~16 chars
+    return crypto.randomBytes(12).toString("base64url");
 }
 
-
 export const authService = {
-    async createAdmin(dto: unknown) {
+    async createAdmin(dto: createAdminSchemaType) {
         const data = createAdminSchema.parse(dto);
-
         const plainPassword = data.password ?? generateTempPassword();
         const passwordHash = await argon2.hash(plainPassword);
 
         try {
-            const user = await prisma.user.create({
-                data: {
-                    name: data.name.trim(),
-                    email: data.email.toLowerCase().trim(),
-                    role: "ADMIN",
-                    passwordHash,
-                },
-                select: { id: true, name: true, email: true, role: true, createdAt: true, negocioId: true },
+            const user = await authRepository.createAdminInstance({
+                name: data.name,
+                email: data.email,
+                passwordHash
             });
 
-            // Si tú NO mandaste password, te devuelvo la temporal para que la copies y se la des al usuario
-            const credentials =
-                data.password ? { email: user.email } : { email: user.email, tempPassword: plainPassword };
+            const credentials = data.password 
+                ? { email: user.email } 
+                : { email: user.email, tempPassword: plainPassword };
 
             return { user, credentials };
         } catch (e) {
@@ -41,27 +34,18 @@ export const authService = {
             throw e;
         }
     },
-    async login(dto: unknown) {
-        const data = loginSchema.parse(dto);
 
-        const user = await prisma.user.findUnique({
-            where: { email: data.email.toLowerCase().trim() },
-            select: { id: true, name: true, email: true, role: true, passwordHash: true, negocioId: true },
-        });
+    async login(dto: loginSchemaType) {
+        const data = loginSchema.parse(dto);
+        const user = await authRepository.findByEmail(data.email);
 
         if (!user) throw new Error("Credenciales inválidas");
 
         const ok = await argon2.verify(user.passwordHash, data.password);
         if (!ok) throw new Error("Credenciales inválidas");
 
-        // Nota: El SuperAdmin podría no tener negocioId inicialmente. 
-        // En un SaaS real, le asignaríamos uno o tendría acceso global.
         const accessToken = signAccessToken(user.id, user.role, user.negocioId || "");
-
-        const userFull = await prisma.user.findUnique({
-            where: { id: user.id },
-            include: { negocio: true }
-        });
+        const userFull = await authRepository.findByIdWithNegocio(user.id);
 
         return {
             user: {

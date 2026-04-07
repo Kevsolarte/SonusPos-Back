@@ -14,7 +14,6 @@ export const registerSchema = z.object({
 export const createAdminSchema = z.object({
   name: z.string().min(1),
   email: z.string().email(),
-  // opcional: si no la mandas, el sistema genera una temporal
   password: z.string().min(8).optional(),
 });
 

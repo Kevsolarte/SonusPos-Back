@@ -16,8 +16,9 @@ const ventaDetalleSchema = z.object({
 });
 
 const pagoSchema = z.object({
+  // Por ahora solo estos ya luego se anadiran diferentes tipos de pago segun lo que desea el usuario
   metodo: z.enum(["EFECTIVO", "TARJETA", "TRANSFERENCIA", "PAGO_MOVIL", "EFECTIVO_USD", "EFECTIVO_VES"]),
-  monto: decimalAsString, // puedes dejarlo o calcularlo también
+  monto: decimalAsString, 
   referencia: z.string().optional(),
   ultimos4: z.string().min(4).max(4).optional(),
   recibido: decimalAsString.optional(),
@@ -29,11 +30,7 @@ export const createVentaFullSchema = z
     clienteId: z.string().uuid().optional().nullable(),
     clienteCreate: clienteCreateSchema.optional().nullable(),
 
-    // ✅ si vas a calcular todo en backend, quita estos campos:
-    // subtotal: decimalAsString,
-    // descuento: decimalAsString.optional().default("0"),
-    // impuesto: decimalAsString.optional().default("0"),
-    // total: decimalAsString,
+  
 
     nota: z.string().optional(),
 
@@ -52,3 +49,6 @@ export const calcularTotalesSchema = z.object({
     })
   ).min(1),
 });
+
+export type createVentaFullType = z.infer<typeof createVentaFullSchema>;
+export type calcularTotalesType = z.infer<typeof calcularTotalesSchema>;

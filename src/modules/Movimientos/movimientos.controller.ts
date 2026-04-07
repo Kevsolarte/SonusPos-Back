@@ -18,7 +18,7 @@ export const movimientosController = {
         if (!negocioId) return res.status(401).json({ message: "No autorizado" });
 
         const body = createMovimientoManualSchema.parse(req.body);
-        const result = await movimientosService.createManualMovimiento(negocioId, body);
+        const result = await movimientosService.createMovimientoManual(negocioId, body);
 
         res.status(201).json({
             message: "Movimiento registrado correctamente",
