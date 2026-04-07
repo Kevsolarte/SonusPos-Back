@@ -5,11 +5,14 @@ import pg from "pg";
 const { Pool } = pg;
 import argon2 from "argon2";
 
-// Usamos la misma configuración que en la App para evitar errores de inicialización
 const connectionString = process.env.DATABASE_URL;
+
 const pool = new Pool({
   connectionString,
-  ssl: connectionString?.includes("localhost") ? false : { rejectUnauthorized: false },
+  // Configuramos SSL para permitir certificados de Supabase/Render (self-signed)
+  ssl: connectionString?.includes("localhost") 
+    ? false 
+    : { rejectUnauthorized: false },
 });
 
 const adapter = new PrismaPg(pool);

@@ -1,13 +1,17 @@
 import { env } from "./env.config.js";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
-import { Pool } from "pg";
+import pg from "pg";
+const { Pool } = pg;
 
 const connectionString = env.DATABASE_URL;
 
 const pool = new Pool({
   connectionString,
-  ssl: connectionString.includes("localhost") ? false : { rejectUnauthorized: false },
+  // Configuración de SSL robusta para Supabase/Render
+  ssl: connectionString.includes("localhost") 
+    ? false 
+    : { rejectUnauthorized: false },
 });
 
 const adapter = new PrismaPg(pool);
