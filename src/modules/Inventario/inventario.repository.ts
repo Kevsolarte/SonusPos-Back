@@ -7,11 +7,11 @@ export const inventarioRepository = {
             data: {
                 negocioId,
                 nombre: data.nombre,
-                codigoBarra: data.codigoBarra === undefined ? null : data.codigoBarra,
-                descripcion: data.descripcion === undefined ? null : data.descripcion,
+                codigoBarra: data.codigoBarra ?? null,
+                descripcion: data.descripcion ?? null,
                 tipoVenta: data.tipoVenta,
                 unidadMedida: data.unidadMedida,
-                imagenUrl: data.imagenUrl === undefined ? null : data.imagenUrl,
+                imagenUrl: data.imagenUrl ?? null,
 
                 precio: {
                     create: {
@@ -25,7 +25,7 @@ export const inventarioRepository = {
                         stockActual: data.inventario.stockActual,
                         stockMin: data.inventario.stockMin,
                         stockMax: data.inventario.stockMax,
-                        ubicacion: data.inventario.ubicacion === undefined ? null : data.inventario.ubicacion,
+                        ubicacion: data.inventario.ubicacion ?? null,
                     }
                 },
                 movimientos: {
@@ -42,20 +42,21 @@ export const inventarioRepository = {
     },
 
     async updateProducto(negocioId: string, id: string, data: updateProductoType) {
+        // Refactorizado para evitar errores de 'exactOptionalPropertyTypes'
         const updateData: any = {
-            nombre: data.nombre,
-            codigoBarra: data.codigoBarra === undefined ? undefined : (data.codigoBarra ?? null),
-            descripcion: data.descripcion === undefined ? undefined : (data.descripcion ?? null),
-            unidadMedida: data.unidadMedida,
-            imagenUrl: data.imagenUrl === undefined ? undefined : (data.imagenUrl ?? null),
+            ...(data.nombre !== undefined && { nombre: data.nombre }),
+            ...(data.codigoBarra !== undefined && { codigoBarra: data.codigoBarra }),
+            ...(data.descripcion !== undefined && { descripcion: data.descripcion }),
+            ...(data.unidadMedida !== undefined && { unidadMedida: data.unidadMedida }),
+            ...(data.imagenUrl !== undefined && { imagenUrl: data.imagenUrl }),
         };
 
         if (data.precio) {
             updateData.precio = {
                 update: {
-                    preciocompra: data.precio.preciocompra,
-                    precioDetal: data.precio.precioDetal,
-                    precioMayor: data.precio.precioMayor,
+                    ...(data.precio.preciocompra !== undefined && { preciocompra: data.precio.preciocompra }),
+                    ...(data.precio.precioDetal !== undefined && { precioDetal: data.precio.precioDetal }),
+                    ...(data.precio.precioMayor !== undefined && { precioMayor: data.precio.precioMayor }),
                 }
             };
         }
@@ -63,10 +64,10 @@ export const inventarioRepository = {
         if (data.inventario) {
             updateData.inventario = {
                 update: {
-                    stockActual: data.inventario.stockActual,
-                    stockMin: data.inventario.stockMin,
-                    stockMax: data.inventario.stockMax,
-                    ubicacion: data.inventario.ubicacion === undefined ? undefined : (data.inventario.ubicacion ?? null),
+                    ...(data.inventario.stockActual !== undefined && { stockActual: data.inventario.stockActual }),
+                    ...(data.inventario.stockMin !== undefined && { stockMin: data.inventario.stockMin }),
+                    ...(data.inventario.stockMax !== undefined && { stockMax: data.inventario.stockMax }),
+                    ...(data.inventario.ubicacion !== undefined && { ubicacion: data.inventario.ubicacion }),
                 }
             };
         }
@@ -138,7 +139,6 @@ export const inventarioRepository = {
         let capitalInventario = 0;
         let gananciaEstimada = 0;
 
-        // Optimización: Solo calcular si no hay búsqueda
         if (page === 1 && !search) {
             const stats = await prisma.inventario.findMany({
                 where: { producto: { negocioId, activo: true } },

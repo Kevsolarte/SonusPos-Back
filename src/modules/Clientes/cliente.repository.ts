@@ -8,9 +8,9 @@ export const clienteRepository = {
                 negocioId,
                 nombre: data.nombre,
                 documento: data.documento,
-                telefono: data.telefono,
-                email: data.email,
-                direccion: data.direccion,
+                telefono: data.telefono ?? null,
+                email: data.email ?? null,
+                direccion: data.direccion ?? null,
             },
         });
     },
@@ -19,11 +19,11 @@ export const clienteRepository = {
         return await prisma.cliente.update({
             where: { id, negocioId },
             data: {
-                nombre: data.nombre,
-                documento: data.documento,
-                telefono: data.telefono,
-                email: data.email,
-                direccion: data.direccion,
+                ...(data.nombre && { nombre: data.nombre }),
+                ...(data.documento && { documento: data.documento }),
+                ...(data.telefono !== undefined && { telefono: data.telefono }),
+                ...(data.email !== undefined && { email: data.email }),
+                ...(data.direccion !== undefined && { direccion: data.direccion }),
             }
         });
     },
