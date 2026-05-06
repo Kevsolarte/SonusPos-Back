@@ -14,14 +14,14 @@ RUN npm install
 # 5. Copiamos el resto del código fuente
 COPY . .
 
-# 6. Generamos el cliente de Prisma (vital para que funcione la BD)
-RUN npx prisma generate
+# 6. Generamos el cliente de Prisma (usamos una URL ficticia para que el build no falle por falta de env vars)
+RUN DATABASE_URL="postgresql://postgres:postgres@localhost:5432/postgres" npx prisma generate
 
 # 7. Compilamos el proyecto (TypeScript -> JS)
 RUN npm run build
 
-# 8. Exponemos el puerto en el que corre tu app (según tu app.ts)
+# 8. Exponemos el puerto en el que corre tu app
 EXPOSE 3000
 
-# 9. Comando para arrancar la app
-CMD ["npm", "start"]
+# 9. Comando para arrancar la app aplicando migraciones automáticamente
+CMD npx prisma migrate deploy && npm start
