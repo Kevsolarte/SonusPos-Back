@@ -9,7 +9,9 @@ RUN npm install
 
 COPY . .
 
-RUN npx prisma generate
+RUN DATABASE_URL="postgresql://postgres:postgres@localhost:5432/postgres" \
+    DIRECT_URL="postgresql://postgres:postgres@localhost:5432/postgres" \
+    npx prisma generate
 
 RUN npm run build
 
