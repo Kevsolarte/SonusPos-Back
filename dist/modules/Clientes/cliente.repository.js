@@ -1,18 +1,28 @@
 import { prisma } from "../../config/db.config.js";
-import { Prisma } from "@prisma/client";
+import {} from "./cliente.schema.js";
 export const clienteRepository = {
     async create(negocioId, data) {
         return await prisma.cliente.create({
             data: {
-                ...data,
                 negocioId,
+                nombre: data.nombre,
+                documento: data.documento,
+                telefono: data.telefono ?? null,
+                email: data.email ?? null,
+                direccion: data.direccion ?? null,
             },
         });
     },
     async update(id, negocioId, data) {
         return await prisma.cliente.update({
             where: { id, negocioId },
-            data,
+            data: {
+                ...(data.nombre && { nombre: data.nombre }),
+                ...(data.documento && { documento: data.documento }),
+                ...(data.telefono !== undefined && { telefono: data.telefono }),
+                ...(data.email !== undefined && { email: data.email }),
+                ...(data.direccion !== undefined && { direccion: data.direccion }),
+            }
         });
     },
     async delete(id, negocioId) {
@@ -39,7 +49,7 @@ export const clienteRepository = {
                 where,
                 skip,
                 take: limit,
-                orderBy: { nombre: "asc" },
+                orderBy: { createdAt: "desc" },
             }),
             prisma.cliente.count({ where })
         ]);

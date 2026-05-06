@@ -8,7 +8,21 @@ export const ventasRepository = {
                 id: { in: productIds },
                 negocioId
             },
-            include: { precio: true }
+            include: { 
+                precio: true,
+                variantes: true,
+                componentes: true,
+                promociones: {
+                    where: {
+                        promocion: {
+                            activa: true,
+                            fechaInicio: { lte: new Date() },
+                            fechaFin: { gte: new Date() }
+                        }
+                    },
+                    include: { promocion: true }
+                }
+            }
         });
     },
 
@@ -22,6 +36,17 @@ export const ventasRepository = {
     async updateStock(tx: Prisma.TransactionClient, productoId: string, cantidad: Prisma.Decimal) {
         return await tx.inventario.update({
             where: { productoId },
+            data: {
+                stockActual: {
+                    decrement: cantidad
+                }
+            }
+        });
+    },
+
+    async updateVarianteStock(tx: Prisma.TransactionClient, varianteId: string, cantidad: Prisma.Decimal) {
+        return await tx.productoVariante.update({
+            where: { id: varianteId },
             data: {
                 stockActual: {
                     decrement: cantidad

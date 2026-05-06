@@ -1,111 +1,92 @@
-import 'dotenv/config'; 
-import { PrismaClient } from "@prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
-import pg from "pg";
-const { Pool } = pg;
-import argon2 from "argon2";
-
-const connectionString = process.env.DATABASE_URL;
-
-const pool = new Pool({
-  connectionString,
-  // Configuramos SSL para permitir certificados de Supabase/Render (self-signed)
-  ssl: connectionString?.includes("localhost") 
-    ? false 
-    : { rejectUnauthorized: false },
-});
-
-const adapter = new PrismaPg(pool);
-const prisma = new PrismaClient({ adapter });
+import { prisma } from '../src/config/db.config.js';
+import argon2 from 'argon2';
 
 async function main() {
-    console.log("🌱 Starting seeding...");
-    
-    const negocio = await prisma.negocio.upsert({
-        where: { ruc: "DEMO-123456" },
-        update: {},
-        create: {
-            nombre: "SonusPos Store - Demo",
-            ruc: "DEMO-123456",
-            direccion: "Av. Principal, Edificio Tech, Piso 5",
-            telefono: "+58 412-0000000",
-        }
-    });
+  console.log('🌱 Start seeding...');
 
-    const passwordHash = await argon2.hash("demo1234");
-    const user = await prisma.user.upsert({
-        where: { email: "demo@sonuspos.com" },
-        update: { passwordHash },
-        create: {
-            name: "Administrador Demo",
-            email: "demo@sonuspos.com",
-            passwordHash,
-            role: "ADMIN",
-            negocioId: negocio.id
-        }
-    });
+  // 1. Limpieza total definitiva (Orden de hijos a padres)
+  console.log('🧹 Limpiando base de datos...');
+  
+  // Nivel 4 (Hijos de hijos)
+  await prisma.transaccionFinanciera.deleteMany({});
+  await prisma.ventaPago.deleteMany({});
+  await prisma.promocionProducto.deleteMany({});
+  await prisma.comboComponente.deleteMany({});
+  
+  // Nivel 3 (Dependen de Productos/Ventas)
+  await prisma.ventaDetalle.deleteMany({});
+  await prisma.movimientoInventario.deleteMany({});
+  await prisma.productoVariante.deleteMany({});
+  await prisma.inventario.deleteMany({});
+  await prisma.precio.deleteMany({});
+  
+  // Nivel 2 (Dependen del Negocio)
+  await prisma.venta.deleteMany({});
+  await prisma.promocion.deleteMany({});
+  await prisma.tasaCambio.deleteMany({});
+  await prisma.cierre.deleteMany({});
+  await prisma.user.deleteMany({});
+  await prisma.producto.deleteMany({});
+  await prisma.categoria.deleteMany({});
+  await prisma.cuenta.deleteMany({});
+  await prisma.cliente.deleteMany({});
+  await prisma.proveedor.deleteMany({});
 
-    console.log(`✅ User created: ${user.email} / password: demo1234`);
+  // Nivel 1 (Entidad Raíz)
+  await prisma.negocio.deleteMany({});
 
-    const productosData = [
-        { nombre: "Harina de Maíz 1kg", precioC: 0.8, precioD: 1.2, stock: 50, codigo: "7591234" },
-        { nombre: "Leche Completa 1L", precioC: 1.2, precioD: 1.8, stock: 30, codigo: "7595678" },
-        { nombre: "Café Molido 250g", precioC: 2.0, precioD: 3.5, stock: 20, codigo: "7599012" },
-        { nombre: "Arroz Blanco 1kg", precioC: 0.7, precioD: 1.1, stock: 100, codigo: "7593456" },
-        { nombre: "Aceite Vegetal 1L", precioC: 2.5, precioD: 3.8, stock: 15, codigo: "7597890" },
-    ];
-
-    for (const p of productosData) {
-        const exists = await prisma.producto.findFirst({
-            where: { nombre: p.nombre, negocioId: negocio.id }
-        });
-
-        if (!exists) {
-            await prisma.producto.create({
-                data: {
-                    nombre: p.nombre,
-                    codigoBarra: p.codigo,
-                    tipoVenta: "UNIDAD",
-                    unidadMedida: "UNIDAD",
-                    negocioId: negocio.id,
-                    precio: {
-                        create: {
-                            preciocompra: p.precioC,
-                            precioDetal: p.precioD,
-                        }
-                    },
-                    inventario: {
-                        create: {
-                            stockActual: p.stock,
-                            stockMin: 5,
-                            stockMax: 200,
-                        }
-                    }
-                }
-            });
-        }
+  // 2. Crear Negocio
+  const negocio = await prisma.negocio.create({
+    data: {
+      nombre: 'SoftPos Charcutería CA',
+      ruc: 'J-12345678-9',
+      direccion: 'Av Principal, Caracas',
+      telefono: '0414-1234567'
     }
+  });
 
-    await prisma.cliente.upsert({
-        where: { documento_negocioId: { documento: "V-12345678", negocioId: negocio.id } },
-        update: {},
-        create: {
-            nombre: "Juan Pérez (Cliente Demo)",
-            documento: "V-12345678",
-            telefono: "0424-1112233",
-            negocioId: negocio.id
-        }
-    });
+  console.log(`✅ Negocio creado: ${negocio.nombre}`);
 
-    console.log("📦 Products and Customers ready.");
-    console.log("✨ Seeding finished successfully.");
+  // 3. Crear Tasas de Cambio Iniciales
+  await prisma.tasaCambio.createMany({
+    data: [
+      { nombre: 'Dólar Paralelo', moneda: 'VES', tasa: 38.50, isPrincipal: true, negocioId: negocio.id },
+      { nombre: 'BCV', moneda: 'VES', tasa: 36.40, isPrincipal: false, negocioId: negocio.id },
+    ]
+  });
+
+  // 4. Crear Cuentas Financieras
+  await prisma.cuenta.createMany({
+    data: [
+      { nombre: 'Caja Efectivo USD', tipo: 'EFECTIVO', moneda: 'USD', saldoActual: 100, negocioId: negocio.id },
+      { nombre: 'Caja Efectivo VES', tipo: 'EFECTIVO', moneda: 'VES', saldoActual: 5000, negocioId: negocio.id },
+      { nombre: 'Banesco (Pago Móvil)', tipo: 'BANCO', moneda: 'VES', saldoActual: 0, negocioId: negocio.id },
+    ]
+  });
+
+  // 5. Crear Categoría
+  const cat = await prisma.categoria.create({
+    data: { nombre: 'CHARCUTERÍA', negocioId: negocio.id }
+  });
+
+  // 6. Crear Usuarios
+  const hashedPassword = await argon2.hash('123456');
+  
+  await prisma.user.createMany({
+    data: [
+      { name: 'Administrador', email: 'admin@admin.com', passwordHash: hashedPassword, role: 'SUPERADMIN', negocioId: negocio.id },
+      { name: 'Cajero 1', email: 'caja1@test.com', passwordHash: hashedPassword, role: 'ADMIN', negocioId: negocio.id },
+    ]
+  });
+
+  console.log('✅ Base de datos sembrada con éxito!');
 }
 
 main()
-    .catch((e) => {
-        console.error(e);
-        process.exit(1);
-    })
-    .finally(async () => {
-        await prisma.$disconnect();
-    });
+  .catch((e) => {
+    console.error(e);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });

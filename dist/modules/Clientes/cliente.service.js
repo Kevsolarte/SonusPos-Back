@@ -9,15 +9,7 @@ export const clienteService = {
         if (existente) {
             throw new AppError("Ya existe un cliente registrado con ese documento.");
         }
-        // Limpiar campos undefined para evitar errores con exactOptionalPropertyTypes
-        const createData = {
-            nombre: data.nombre,
-            documento: data.documento,
-            ...(data.telefono !== undefined && { telefono: data.telefono }),
-            ...(data.email !== undefined && { email: data.email }),
-            ...(data.direccion !== undefined && { direccion: data.direccion }),
-        };
-        return await clienteRepository.create(negocioId, createData);
+        return await clienteRepository.create(negocioId, data);
     },
     async actualizarCliente(id, negocioId, dto) {
         const data = updateClienteSchema.parse(dto);
@@ -33,19 +25,7 @@ export const clienteService = {
                 throw new AppError("El nuevo documento ya está registrado con otro cliente.");
             }
         }
-        // Limpiar campos undefined
-        const updateData = {};
-        if (data.nombre !== undefined)
-            updateData.nombre = data.nombre;
-        if (data.documento !== undefined)
-            updateData.documento = data.documento;
-        if (data.telefono !== undefined)
-            updateData.telefono = data.telefono;
-        if (data.email !== undefined)
-            updateData.email = data.email;
-        if (data.direccion !== undefined)
-            updateData.direccion = data.direccion;
-        return await clienteRepository.update(id, negocioId, updateData);
+        return await clienteRepository.update(id, negocioId, data);
     },
     async eliminarCliente(id, negocioId) {
         const cliente = await clienteRepository.findById(id, negocioId);

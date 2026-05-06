@@ -12,7 +12,7 @@ export const listMovimientosQuerySchema = z.object({
     startDate: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
     endDate: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
     search: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional()),
-    page: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional().transform(v => v ? Number(v) : 1)),
-    limit: z.preprocess((v) => (v === "" ? undefined : v), z.string().optional().transform(v => v ? Number(v) : 50)),
+    page: z.preprocess((v) => (v === "" ? undefined : v), z.coerce.number().optional().default(1)),
+    limit: z.preprocess((v) => (v === "" ? undefined : v), z.coerce.number().optional().default(50)),
 });
 //# sourceMappingURL=movimientos.schema.js.map

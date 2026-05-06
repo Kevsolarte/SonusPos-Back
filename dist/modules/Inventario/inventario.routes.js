@@ -9,4 +9,7 @@ inventarioRoutes.put("/producto/:id", requireAuth, inventarioController.updatePr
 inventarioRoutes.delete("/producto/:id", requireAuth, inventarioController.deleteProducto);
 inventarioRoutes.get("/", requireAuth, inventarioController.getInventario);
 inventarioRoutes.post("/entrada", requireAuth, validateBody(addStockSchema), inventarioController.addStock);
+inventarioRoutes.get("/producto/:id/historial", requireAuth, inventarioController.getProductoHistory);
+inventarioRoutes.get("/producto/:id/ventas", requireAuth, inventarioController.getProductoSales);
+inventarioRoutes.get("/producto/:id/movimientos", requireAuth, inventarioController.getProductoMovimientos);
 //# sourceMappingURL=inventario.routes.js.map

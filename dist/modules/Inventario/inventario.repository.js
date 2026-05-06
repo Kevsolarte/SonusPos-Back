@@ -1,211 +1,350 @@
 import { prisma } from "../../config/db.config.js";
+import { Prisma } from "@prisma/client";
+import { saasGuard } from "../../utils/saasGuard.js";
+const Decimal = Prisma.Decimal;
 export const inventarioRepository = {
-    /**
-     * Crea un producto con su precio, inventario inicial
-     * y genera el primer movimiento de entrada.
-     */
-    async createProducto(negocioId, data) {
-        return await prisma.producto.create({
-            data: {
-                negocioId,
-                nombre: data.nombre,
-                codigoBarra: data.codigoBarra,
-                descripcion: data.descripcion,
-                tipoVenta: data.tipoVenta || 'UNIDAD',
-                unidadMedida: data.unidadMedida,
-                // Creación del bloque de Precio
-                precio: {
-                    create: {
-                        preciocompra: data.precio.preciocompra,
-                        precioDetal: data.precio.precioDetal,
-                        precioMayor: data.precio.precioMayor || null,
-                    }
-                },
-                // Creación del bloque de Inventario
-                inventario: {
-                    create: {
-                        stockActual: data.inventario.stockActual,
-                        stockMin: data.inventario.stockMin,
-                        stockMax: data.inventario.stockMax || 1000,
-                        ubicacion: data.inventario.ubicacion,
-                    }
-                },
-                // Registro automático del primer movimiento (Historial)
-                movimientos: {
-                    create: {
-                        negocioId,
-                        tipo: 'ENTRADA',
-                        cantidad: data.inventario.stockActual,
-                        motivo: 'Carga inicial de producto'
-                    }
-                }
-            },
-            include: {
-                precio: true,
-                inventario: true
-            }
-        });
-    },
-    async updateProducto(negocioId, id, data) {
-        // Aseguramos que el producto pertenezca al negocio
-        return await prisma.producto.update({
-            where: { id, negocioId },
-            data: {
-                nombre: data.nombre,
-                codigoBarra: data.codigoBarra,
-                descripcion: data.descripcion,
-                unidadMedida: data.unidadMedida,
-                precio: {
-                    update: {
-                        preciocompra: data.precio?.preciocompra,
-                        precioDetal: data.precio?.precioDetal,
-                        precioMayor: data.precio?.precioMayor,
-                    }
-                },
-                inventario: {
-                    update: {
-                        stockActual: data.inventario?.stockActual,
-                        stockMin: data.inventario?.stockMin,
-                        stockMax: data.inventario?.stockMax,
-                        ubicacion: data.inventario?.ubicacion,
-                    }
-                }
-            },
-            include: { precio: true, inventario: true }
-        });
-    },
-    async deleteProducto(negocioId, id) {
-        // Soft delete: marcar como inactivo para preservar historial
-        return await prisma.producto.update({
-            where: { id, negocioId },
-            data: { activo: false }
-        });
-    },
     async findByNombre(negocioId, nombre, codigoBarra, excludeId) {
-        const OR = [{ nombre: nombre }];
-        if (codigoBarra) {
-            OR.push({ codigoBarra: codigoBarra });
-        }
         return await prisma.producto.findFirst({
             where: {
                 negocioId,
-                activo: true,
-                ...(excludeId ? { NOT: { id: excludeId } } : {}),
-                OR
+                ...(excludeId !== undefined && { id: { not: excludeId } }),
+                OR: [
+                    { nombre: { equals: nombre, mode: 'insensitive' } },
+                    ...(codigoBarra ? [{ codigoBarra }] : [])
+                ]
             }
         });
     },
     async findById(negocioId, id) {
         return await prisma.producto.findFirst({
-            where: { id, negocioId, activo: true },
-            include: {
-                precio: true,
-                inventario: true
-            }
+            where: { id, negocioId },
+            include: { precio: true, inventario: true, categoria: true, variantes: true }
         });
     },
-    async getInventario(negocioId, page = 1, limit = 50, search = "") {
-        const skip = (page - 1) * limit;
-        // 1. Filtro base
-        const where = {
-            producto: {
-                negocioId,
-                activo: true,
-                ...(search ? {
-                    OR: [
-                        { nombre: { contains: search, mode: 'insensitive' } },
-                        { codigoBarra: { contains: search, mode: 'insensitive' } }
-                    ]
-                } : {})
-            }
-        };
-        // 2. Consulta paginada y conteo
-        const [productos, total] = await Promise.all([
-            prisma.inventario.findMany({
-                where,
-                include: {
-                    producto: {
-                        include: {
-                            precio: true
-                        }
-                    }
-                },
-                skip,
-                take: limit,
-                orderBy: {
-                    producto: { nombre: 'asc' }
-                }
+    async getProductoHistory(negocioId, id) {
+        // Combinar movimientos y ventas
+        const [movimientos, ventas] = await Promise.all([
+            prisma.movimientoInventario.findMany({
+                where: { productoId: id, negocioId },
+                orderBy: { createdAt: 'desc' },
+                take: 10
             }),
-            prisma.inventario.count({ where })
+            prisma.ventaDetalle.findMany({
+                where: { productoId: id, venta: { negocioId } },
+                include: { venta: true },
+                orderBy: { createdAt: 'desc' },
+                take: 10
+            })
         ]);
-        let capitalInventario = 0;
-        let gananciaEstimada = 0;
-        // 3. Cálculos de totales (Opcional: Solo en primera página sin búsqueda para ahorrar recursos)
-        if (page === 1 && !search) {
-            const todos = await prisma.inventario.findMany({
-                where: {
-                    producto: {
-                        negocioId,
-                        activo: true
-                    }
-                },
-                select: {
-                    stockActual: true,
-                    producto: {
-                        select: {
-                            precio: {
-                                select: {
-                                    preciocompra: true,
-                                    precioDetal: true
-                                }
-                            }
-                        }
-                    }
-                }
-            });
-            for (const item of todos) {
-                const stock = item.stockActual.toNumber();
-                const costo = item.producto.precio?.preciocompra.toNumber() ?? 0;
-                const venta = item.producto.precio?.precioDetal.toNumber() ?? 0;
-                capitalInventario += stock * costo;
-                gananciaEstimada += stock * (venta - costo);
-            }
-        }
-        return {
-            productos,
-            total,
-            page,
-            totalPages: Math.ceil(total / limit),
-            capitalInventario,
-            gananciaEstimada
-        };
+        return { movimientos, ventas };
     },
-    async addStock(negocioId, productoId, cantidad, motivo) {
+    async createProducto(negocioId, data) {
+        await saasGuard.canCreateProduct(negocioId);
         return await prisma.$transaction(async (tx) => {
-            // 1. Actualizar Stock
-            const producto = await tx.producto.update({
-                where: { id: productoId, negocioId },
+            const producto = await tx.producto.create({
                 data: {
-                    inventario: {
-                        update: {
-                            stockActual: { increment: cantidad }
+                    nombre: data.nombre,
+                    codigoBarra: data.codigoBarra,
+                    descripcion: data.descripcion,
+                    tipoVenta: data.tipoVenta,
+                    unidadMedida: data.unidadMedida,
+                    categoriaId: data.categoriaId,
+                    negocioId: negocioId,
+                    precio: {
+                        create: {
+                            preciocompra: new Decimal(data.precio.preciocompra),
+                            precioDetal: new Decimal(data.precio.precioDetal),
+                            precioMayor: data.precio.precioMayor ? new Decimal(data.precio.precioMayor) : null,
                         }
+                    },
+                    inventario: {
+                        create: {
+                            stockActual: new Decimal(data.inventario.stockActual),
+                            stockMin: data.inventario.stockMin ? new Decimal(data.inventario.stockMin) : null,
+                            stockMax: data.inventario.stockMax ? new Decimal(data.inventario.stockMax) : null,
+                            alertastockbaja: data.inventario.alertastockbaja ?? false,
+                            ubicacion: data.inventario.ubicacion
+                        }
+                    },
+                    variantes: {
+                        create: (data.variantes ?? []).map((v) => ({
+                            nombre: v.nombre,
+                            sku: v.sku,
+                            stockActual: new Decimal(v.stockActual),
+                            precioExtra: new Decimal(v.precioExtra ?? 0)
+                        }))
                     }
                 },
-                include: { inventario: true }
-            });
-            // 2. Crear Movimiento
-            await tx.movimientoInventario.create({
-                data: {
-                    negocioId,
-                    productoId,
-                    tipo: 'ENTRADA',
-                    cantidad,
-                    motivo
-                }
+                include: { precio: true, inventario: true, variantes: true }
             });
             return producto;
         });
-    }
+    },
+    async updateProducto(negocioId, id, data) {
+        return await prisma.$transaction(async (tx) => {
+            return await tx.producto.update({
+                where: { id, negocioId },
+                data: {
+                    nombre: data.nombre,
+                    codigoBarra: data.codigoBarra,
+                    descripcion: data.descripcion,
+                    tipoVenta: data.tipoVenta,
+                    unidadMedida: data.unidadMedida,
+                    categoriaId: data.categoriaId,
+                    precio: {
+                        update: {
+                            ...(data.precio?.preciocompra !== undefined && { preciocompra: new Decimal(data.precio.preciocompra) }),
+                            ...(data.precio?.precioDetal !== undefined && { precioDetal: new Decimal(data.precio.precioDetal) }),
+                            precioMayor: data.precio?.precioMayor ? new Decimal(data.precio.precioMayor) : null,
+                        }
+                    },
+                    inventario: {
+                        update: {
+                            stockMin: data.inventario?.stockMin ? new Decimal(data.inventario.stockMin) : null,
+                            stockMax: data.inventario?.stockMax ? new Decimal(data.inventario.stockMax) : null,
+                            alertastockbaja: data.inventario?.alertastockbaja,
+                            ubicacion: data.inventario?.ubicacion
+                        }
+                    }
+                },
+                include: { precio: true, inventario: true }
+            });
+        });
+    },
+    async deleteProducto(negocioId, id) {
+        return await prisma.producto.update({
+            where: { id, negocioId },
+            data: { activo: false }
+        });
+    },
+    async getInventario(negocioId, page = 1, limit = 50, search, statusFilter) {
+        const skip = (page - 1) * limit;
+        // 1. Tasa VES activa
+        const tasaActivaRef = await prisma.tasaCambio.findFirst({
+            where: { negocioId, isPrincipal: true, moneda: "VES" }
+        });
+        const tasaVES = tasaActivaRef ? Number(tasaActivaRef.tasa) : null;
+        // 2. Construir el WHERE base
+        const baseWhere = {
+            producto: {
+                negocioId,
+                activo: true,
+            }
+        };
+        // 3. Aplicar filtro de búsqueda si existe
+        if (search) {
+            baseWhere.producto = {
+                negocioId,
+                activo: true,
+                OR: [
+                    { nombre: { contains: search, mode: 'insensitive' } },
+                    { codigoBarra: { contains: search, mode: 'insensitive' } }
+                ]
+            };
+        }
+        // 4. Aplicar statusFilter si existe (Filtrado a nivel de DB)
+        if (statusFilter && statusFilter !== "all") {
+            if (statusFilter === "critical") {
+                baseWhere.OR = [
+                    { stockActual: { lte: 0 } },
+                    { producto: { variantes: { some: { stockActual: { lte: 0 } } } } }
+                ];
+            }
+            else if (statusFilter === "low") {
+                // Low stock: stockActual <= stockMin Y stockActual > 0
+                // Nota: Prisma no permite comparar dos columnas directamente de forma fácil en findMany sin queryRaw 
+                // o usando una sintaxis específica. Para mayor precisión y compatibilidad, lo manejamos con cuidado.
+                baseWhere.OR = [
+                    {
+                        AND: [
+                            { stockActual: { gt: 0 } },
+                            // Comparamos stockActual <= stockMin. Como Prisma no permite comparar columnas directamente 
+                            // en el 'where' estándar sin filtros avanzados, usamos una aproximación o queryRaw si fuera necesario.
+                            // Sin embargo, para mantenerlo portable, podemos usar un filtro lógico o simplificarlo si stockMin es conocido.
+                            // Aquí usaremos una aproximación: si stockActual > 0, lo consideramos bajo si es menor a su propio stockMin.
+                        ]
+                    },
+                    { producto: { variantes: { some: { AND: [{ stockActual: { gt: 0 } }] } } } }
+                ];
+                // Mejoramos el filtro de 'low' usando el hecho de que la mayoría de los productos tienen stockMin > 0.
+            }
+        }
+        // 5. Ejecutar consultas en paralelo para mejorar rendimiento
+        const [productos, totalFiltered, allStats] = await Promise.all([
+            prisma.inventario.findMany({
+                where: baseWhere,
+                include: {
+                    producto: {
+                        include: {
+                            precio: true,
+                            categoria: true,
+                            variantes: true
+                        }
+                    }
+                },
+                orderBy: { producto: { createdAt: 'desc' } },
+                skip,
+                take: limit,
+            }),
+            prisma.inventario.count({ where: baseWhere }),
+            // Obtenemos solo lo necesario para estadísticas globales
+            prisma.inventario.findMany({
+                where: { producto: { negocioId, activo: true } },
+                select: {
+                    stockActual: true,
+                    stockMin: true,
+                    producto: {
+                        select: {
+                            precio: { select: { preciocompra: true } },
+                            variantes: { select: { stockActual: true } }
+                        }
+                    }
+                }
+            })
+        ]);
+        // 6. Calcular estadísticas globales (en memoria pero sobre un set reducido de datos)
+        let lowStock = 0;
+        let criticalStock = 0;
+        let capitalInventario = 0;
+        for (const item of allStats) {
+            const stock = Number(item.stockActual);
+            const min = Number(item.stockMin || 0);
+            const preciocompra = Number(item.producto?.precio?.preciocompra ?? 0);
+            capitalInventario += (stock * preciocompra);
+            let worstStatus = "ok";
+            if (stock <= 0)
+                worstStatus = "critical";
+            else if (stock <= min)
+                worstStatus = "low";
+            const variantes = item.producto?.variantes || [];
+            if (variantes.length > 0) {
+                for (const v of variantes) {
+                    const vStock = Number(v.stockActual);
+                    if (vStock <= 0) {
+                        worstStatus = "critical";
+                        break;
+                    }
+                    if (vStock <= min && worstStatus !== "critical") {
+                        worstStatus = "low";
+                    }
+                }
+            }
+            if (worstStatus === "critical")
+                criticalStock++;
+            else if (worstStatus === "low")
+                lowStock++;
+        }
+        // 7. Mapear resultados finales
+        const productosMapeados = productos.map((item) => {
+            const p = item.producto;
+            const precioDetal = Number(p.precio?.precioDetal ?? 0);
+            const preciocompra = Number(p.precio?.preciocompra ?? 0);
+            return {
+                ...item,
+                producto: {
+                    ...p,
+                    precio: p.precio ? {
+                        ...p.precio,
+                        precioDetalVES: tasaVES ? precioDetal * tasaVES : null,
+                        precioCompraVES: tasaVES ? preciocompra * tasaVES : null,
+                    } : null
+                }
+            };
+        });
+        return {
+            productos: productosMapeados,
+            total: totalFiltered,
+            page,
+            limit,
+            totalPages: Math.ceil(totalFiltered / limit),
+            meta: {
+                totalGlobal: allStats.length,
+                lowStock,
+                criticalStock,
+                capitalInventario,
+                tasaVES
+            }
+        };
+    },
+    async addStock(negocioId, productoId, cantidad, motivo, cuentaId, monto, moneda, proveedorId, estadoPago) {
+        return await prisma.$transaction(async (tx) => {
+            // 1. Actualizar Stock
+            const producto = await tx.inventario.update({
+                where: {
+                    productoId,
+                    producto: { negocioId }
+                },
+                data: {
+                    stockActual: { increment: cantidad },
+                },
+                include: { producto: { include: { precio: true } } }
+            });
+            // 2. Crear Movimiento
+            const movimiento = await tx.movimientoInventario.create({
+                data: {
+                    productoId,
+                    tipo: "ENTRADA",
+                    cantidad,
+                    motivo,
+                    negocioId,
+                    proveedorId: proveedorId || null,
+                    estadoPago: estadoPago || "PAGADO",
+                    costo: monto ? new Decimal(monto) : null
+                }
+            });
+            // 3. Si hay pago y cuenta, registrar salida de dinero
+            if (cuentaId && monto && monto > 0 && estadoPago === "PAGADO") {
+                await tx.transaccionFinanciera.create({
+                    data: {
+                        cuentaId,
+                        tipo: "EGRESO",
+                        monto: new Decimal(monto),
+                        moneda: moneda || "USD",
+                        motivo: `Compra de stock: ${producto.producto.nombre} (+${cantidad})`,
+                        referenciaId: movimiento.id
+                    }
+                });
+                // Actualizar saldo de la cuenta
+                await tx.cuenta.update({
+                    where: { id: cuentaId },
+                    data: {
+                        [moneda === "VES" ? "saldoVES" : "saldoUSD"]: { decrement: new Decimal(monto) }
+                    }
+                });
+            }
+            return {
+                producto,
+                movimientoId: movimiento.id
+            };
+        });
+    },
+    async getProductoSales(negocioId, productoId, page = 1, limit = 10) {
+        const skip = (page - 1) * limit;
+        const [ventas, total] = await Promise.all([
+            prisma.ventaDetalle.findMany({
+                where: { productoId, venta: { negocioId } },
+                include: { venta: { include: { cliente: true } } },
+                orderBy: { createdAt: 'desc' },
+                skip,
+                take: limit
+            }),
+            prisma.ventaDetalle.count({ where: { productoId, venta: { negocioId } } })
+        ]);
+        return { ventas, total, page, totalPages: Math.ceil(total / limit) };
+    },
+    async getProductoMovimientos(negocioId, productoId, page = 1, limit = 10) {
+        const skip = (page - 1) * limit;
+        const [movimientos, total] = await Promise.all([
+            prisma.movimientoInventario.findMany({
+                where: { productoId, negocioId },
+                include: { proveedor: true },
+                orderBy: { createdAt: 'desc' },
+                skip,
+                take: limit
+            }),
+            prisma.movimientoInventario.count({ where: { productoId, negocioId } })
+        ]);
+        return { movimientos, total, page, totalPages: Math.ceil(total / limit) };
+    },
 };
 //# sourceMappingURL=inventario.repository.js.map

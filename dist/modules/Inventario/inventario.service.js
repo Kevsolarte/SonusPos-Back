@@ -1,5 +1,7 @@
-import { createProductoSchema } from "./inventario.schema.js";
-import { inventarioRepository, } from "./inventario.repository.js";
+import { createProductoSchema, updateProductoSchema } from "./inventario.schema.js";
+import { inventarioRepository } from "./inventario.repository.js";
+import { negocioRepository } from "../Negocio/negocio.repository.js";
+import { deudasRepository } from "../Creditos/creditos.repository.js";
 import { AppError } from "../../middlewares/error.middleware.js";
 const formatName = (text) => {
     return text
@@ -9,80 +11,99 @@ const formatName = (text) => {
 };
 export const inventarioService = {
     async createProducto(negocioId, dto) {
-        // 1. Validaciones de coherencia de precios
-        if (dto.precio.precioDetal <= dto.precio.preciocompra) {
-            throw new AppError("El precio de venta no puede ser menor o igual al precio de compra");
+        const data = createProductoSchema.parse(dto);
+        // VALIDACIÓN DE LÍMITES (PLAN)
+        const limits = await negocioRepository.getLimits(negocioId);
+        if (limits && limits._count.productos >= limits.limiteProductos) {
+            throw new AppError(`Has alcanzado el límite de ${limits.limiteProductos} productos permitido por tu plan.`, 403);
         }
-        // 2. Validaciones de coherencia de inventario
-        if (dto.inventario.stockMin > dto.inventario.stockMax) {
+        if (data.precio.precioDetal <= data.precio.preciocompra) {
+            throw new AppError("El precio de venta debe ser mayor al precio de compra.");
+        }
+        if (data.inventario.stockMin && data.inventario.stockMax && data.inventario.stockMin > data.inventario.stockMax) {
             throw new AppError("El stock mínimo no puede ser mayor al stock máximo.");
         }
-        // 3. Formateo y limpieza de datos
-        const nameClean = formatName(dto.nombre);
-        const barcodeClean = (dto.codigoBarra === "" || !dto.codigoBarra) ? null : dto.codigoBarra;
-        // 4. Validación de duplicados con scope de negocio
+        const nameClean = formatName(data.nombre);
+        const barcodeClean = (data.codigoBarra === "" || !data.codigoBarra) ? null : data.codigoBarra;
         const existe = await inventarioRepository.findByNombre(negocioId, nameClean, barcodeClean);
         if (existe) {
             if (existe.nombre.toLowerCase() === nameClean.toLowerCase()) {
-                throw new AppError(`Ya existe un producto con el nombre "${nameClean}" en tu negocio.`);
+                throw new AppError(`Ya existe el producto "${nameClean}" en tu negocio.`);
             }
             if (barcodeClean && existe.codigoBarra === barcodeClean) {
-                throw new AppError(`El código de barras "${barcodeClean}" ya está asignado a otro producto.`);
+                throw new AppError(`El código "${barcodeClean}" ya está asignado.`);
             }
         }
-        // Si todo está ok, guardamos con negocioId
         return await inventarioRepository.createProducto(negocioId, {
-            ...dto,
+            ...data,
             nombre: nameClean,
             codigoBarra: barcodeClean
         });
     },
     async updateProducto(negocioId, id, dto) {
-        // 1. ¿El producto existe dentro del negocio?
+        const data = updateProductoSchema.parse(dto);
         const actual = await inventarioRepository.findById(negocioId, id);
         if (!actual)
-            throw new AppError("El producto que intentas editar no existe o no pertenece a tu negocio.");
-        // 2. Si viene el nombre, formatear y validar que no choque con OTRO producto del mismo negocio
-        if (dto.nombre || dto.codigoBarra !== undefined) {
-            const nombreLimpio = dto.nombre ? formatName(dto.nombre) : actual.nombre;
-            const barcodeLimpio = (dto.codigoBarra === "" || dto.codigoBarra === null) ? null : (dto.codigoBarra ?? actual.codigoBarra);
+            throw new AppError("El producto no existe o no pertenece a tu negocio.");
+        if (data.nombre || data.codigoBarra !== undefined) {
+            const nombreLimpio = data.nombre ? formatName(data.nombre) : actual.nombre;
+            const barcodeLimpio = (data.codigoBarra === "" || data.codigoBarra === null) ? null : (data.codigoBarra ?? actual.codigoBarra);
             const existe = await inventarioRepository.findByNombre(negocioId, nombreLimpio, barcodeLimpio, id);
             if (existe) {
-                if (dto.nombre && existe.nombre.toLowerCase() === nombreLimpio.toLowerCase()) {
-                    throw new AppError(`El nombre "${nombreLimpio}" ya está en uso en tu negocio.`);
+                if (data.nombre && existe.nombre.toLowerCase() === nombreLimpio.toLowerCase()) {
+                    throw new AppError(`El nombre "${nombreLimpio}" ya está en uso.`);
                 }
                 if (barcodeLimpio && existe.codigoBarra === barcodeLimpio) {
-                    throw new AppError(`El código de barras "${barcodeLimpio}" ya está en uso.`);
+                    throw new AppError(`El código "${barcodeLimpio}" ya está en uso.`);
                 }
             }
-            if (dto.nombre)
-                dto.nombre = nombreLimpio;
-            if (dto.codigoBarra !== undefined)
-                dto.codigoBarra = barcodeLimpio;
+            if (data.nombre)
+                data.nombre = nombreLimpio;
+            if (data.codigoBarra !== undefined)
+                data.codigoBarra = barcodeLimpio;
         }
-        // 3. Validar Reglas de Negocio: Precios
-        const pCompra = dto.precio?.preciocompra ?? actual.precio?.preciocompra.toNumber();
-        const pDetal = dto.precio?.precioDetal ?? actual.precio?.precioDetal.toNumber();
-        if (pDetal <= pCompra) {
+        const pCompra = data.precio?.preciocompra ?? actual.precio?.preciocompra.toNumber();
+        const pDetal = data.precio?.precioDetal ?? actual.precio?.precioDetal.toNumber();
+        if (pDetal && pCompra && pDetal <= pCompra) {
             throw new AppError("El precio de venta debe ser mayor al costo de compra.");
         }
-        // 4. Todo validado -> Mandamos al Repository con scope de negocio
-        return await inventarioRepository.updateProducto(negocioId, id, dto);
+        return await inventarioRepository.updateProducto(negocioId, id, data);
     },
     async deleteProducto(negocioId, id) {
         const existe = await inventarioRepository.findById(negocioId, id);
         if (!existe)
-            throw new AppError("El producto no existe o no pertenece a tu negocio.");
+            throw new AppError("El producto no existe.");
         return await inventarioRepository.deleteProducto(negocioId, id);
     },
-    async getInventario(negocioId, page, limit, search) {
-        return await inventarioRepository.getInventario(negocioId, page, limit, search);
+    async getInventario(negocioId, page, limit, search, statusFilter) {
+        return await inventarioRepository.getInventario(negocioId, page, limit, search, statusFilter);
     },
-    async addStock(negocioId, productoId, cantidad, motivo) {
+    async addStock(negocioId, productoId, cantidad, motivo, cuentaId, monto, moneda, proveedorId, estadoPago) {
         const existe = await inventarioRepository.findById(negocioId, productoId);
         if (!existe)
-            throw new AppError(/* "El producto no existe o no pertenece a tu negocio." */ "El producto no existe o no pertenece a tu negocio.");
-        return await inventarioRepository.addStock(negocioId, productoId, cantidad, motivo);
+            throw new AppError("El producto no existe.");
+        const result = await inventarioRepository.addStock(negocioId, productoId, cantidad, motivo, cuentaId, monto, moneda, proveedorId, estadoPago);
+        // Si el pago es PENDIENTE y hay un monto, crear la Deuda automáticamente
+        if (estadoPago === "PENDIENTE" && monto && monto > 0) {
+            await deudasRepository.create(negocioId, {
+                proveedorId: proveedorId || null,
+                descripcion: `Deuda por compra de stock: ${existe.nombre} (+${cantidad})`,
+                monto: monto,
+                moneda: moneda || "USD",
+                movimientoId: result.movimientoId,
+                tasaCreacion: result.tasaVES ?? undefined,
+            });
+        }
+        return result.producto;
+    },
+    async getProductoHistory(negocioId, id) {
+        return await inventarioRepository.getProductoHistory(negocioId, id);
+    },
+    async getProductoSales(negocioId, id, page, limit) {
+        return await inventarioRepository.getProductoSales(negocioId, id, page, limit);
+    },
+    async getProductoMovimientos(negocioId, id, page, limit) {
+        return await inventarioRepository.getProductoMovimientos(negocioId, id, page, limit);
     }
 };
 //# sourceMappingURL=inventario.service.js.map

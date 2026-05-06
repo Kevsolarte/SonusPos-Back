@@ -6,7 +6,7 @@ export const validateBody = (schema) => (req, res, next) => {
             issues: result.error.issues,
         });
     }
-    req.body = result.data; // body tipado/limpio
+    req.body = result.data;
     next();
 };
 //# sourceMappingURL=validate.zod.js.map

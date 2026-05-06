@@ -1,0 +1,54 @@
+import { z } from "zod";
+
+export const createUserSchema = z.object({
+  name: z.string().min(2, "El nombre es muy corto"),
+  email: z.string().email("Email inválido"),
+  password: z.string().min(6, "La contraseña debe tener al menos 6 caracteres"),
+  role: z.enum(["ADMIN", "USUARIO"]),
+  activo: z.boolean().default(true),
+  permissions: z.object({
+    dashboard: z.boolean().default(false),
+    pos: z.boolean().default(false),
+    inventario: z.boolean().default(false),
+    caja: z.boolean().default(false),
+    clientes: z.boolean().default(false),
+    proveedores: z.boolean().default(false),
+    cuentas: z.boolean().default(false),
+    cobros: z.boolean().default(false),
+    categorias: z.boolean().default(false),
+    usuarios: z.boolean().default(false),
+    reportes: z.boolean().default(false),
+    tasas: z.boolean().default(false),
+    ajustes: z.boolean().default(false),
+    verCostos: z.boolean().default(false),
+    nombreCaja: z.string().optional(),
+  }).optional(),
+});
+
+export const updateUserSchema = z.object({
+  name: z.string().min(2).optional(),
+  email: z.string().email().optional(),
+  password: z.string().min(6).optional(),
+  role: z.enum(["ADMIN", "USUARIO"]).optional(),
+  activo: z.boolean().optional(),
+  permissions: z.object({
+    dashboard: z.boolean(),
+    pos: z.boolean(),
+    inventario: z.boolean(),
+    caja: z.boolean(),
+    clientes: z.boolean(),
+    proveedores: z.boolean(),
+    cuentas: z.boolean(),
+    cobros: z.boolean(),
+    categorias: z.boolean(),
+    usuarios: z.boolean(),
+    reportes: z.boolean(),
+    tasas: z.boolean(),
+    ajustes: z.boolean(),
+    verCostos: z.boolean(),
+    nombreCaja: z.string().optional(),
+  }).optional(),
+});
+
+export type CreateUserDto = z.infer<typeof createUserSchema>;
+export type UpdateUserDto = z.infer<typeof updateUserSchema>;

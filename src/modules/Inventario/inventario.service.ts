@@ -1,6 +1,8 @@
 import { createProductoSchema, updateProductoSchema, type createProductoType, type updateProductoType } from "./inventario.schema.js";
 import { inventarioRepository } from "./inventario.repository.js";
-import { AppError } from "../../middlewares/error.middleware.js";
+import { negocioRepository } from "../Negocio/negocio.repository.js";
+import { deudasRepository }     from "../Creditos/creditos.repository.js";
+import { AppError }             from "../../middlewares/error.middleware.js";
 
 const formatName = (text: string) => {
     return text
@@ -13,10 +15,16 @@ export const inventarioService = {
     async createProducto(negocioId: string, dto: createProductoType) {
         const data = createProductoSchema.parse(dto);
 
+        // VALIDACIÓN DE LÍMITES (PLAN)
+        const limits = await negocioRepository.getLimits(negocioId);
+        if (limits && limits._count.productos >= limits.limiteProductos) {
+            throw new AppError(`Has alcanzado el límite de ${limits.limiteProductos} productos permitido por tu plan.`, 403);
+        }
+
         if (data.precio.precioDetal <= data.precio.preciocompra) {
             throw new AppError("El precio de venta debe ser mayor al precio de compra.");
         }
-        if (data.inventario.stockMin > data.inventario.stockMax) {
+        if (data.inventario.stockMin && data.inventario.stockMax && data.inventario.stockMin > data.inventario.stockMax) {
             throw new AppError("El stock mínimo no puede ser mayor al stock máximo.");
         }
 
@@ -80,13 +88,37 @@ export const inventarioService = {
         return await inventarioRepository.deleteProducto(negocioId, id);
     },
 
-    async getInventario(negocioId: string, page?: number, limit?: number, search?: string) {
-        return await inventarioRepository.getInventario(negocioId, page, limit, search);
+    async getInventario(negocioId: string, page?: number, limit?: number, search?: string, statusFilter?: string) {
+        return await inventarioRepository.getInventario(negocioId, page, limit, search, statusFilter);
     },
 
-    async addStock(negocioId: string, productoId: string, cantidad: number, motivo: string) {
+    async addStock(negocioId: string, productoId: string, cantidad: number, motivo: string, cuentaId?: string, monto?: number, moneda?: "USD" | "VES", proveedorId?: string, estadoPago?: string) {
         const existe = await inventarioRepository.findById(negocioId, productoId);
         if (!existe) throw new AppError("El producto no existe.");
-        return await inventarioRepository.addStock(negocioId, productoId, cantidad, motivo);
+
+        const result = await inventarioRepository.addStock(negocioId, productoId, cantidad, motivo, cuentaId, monto, moneda, proveedorId, estadoPago);
+
+        // Si el pago es PENDIENTE y hay un monto, crear la Deuda automáticamente
+        if (estadoPago === "PENDIENTE" && monto && monto > 0) {
+            await deudasRepository.create(negocioId, {
+                proveedorId: proveedorId || null,
+                descripcion: `Deuda por compra de stock: ${existe.nombre} (+${cantidad})`,
+                monto: monto,
+                moneda: moneda || "USD",
+                movimientoId: result.movimientoId,
+                tasaCreacion: (result as any).tasaVES ?? undefined,
+            });
+        }
+
+        return result.producto;
+    },
+    async getProductoHistory(negocioId: string, id: string) {
+        return await inventarioRepository.getProductoHistory(negocioId, id);
+    },
+    async getProductoSales(negocioId: string, id: string, page?: number, limit?: number) {
+        return await inventarioRepository.getProductoSales(negocioId, id, page, limit);
+    },
+    async getProductoMovimientos(negocioId: string, id: string, page?: number, limit?: number) {
+        return await inventarioRepository.getProductoMovimientos(negocioId, id, page, limit);
     }
 }

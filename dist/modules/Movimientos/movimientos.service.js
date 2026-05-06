@@ -1,109 +1,61 @@
-import { prisma } from "../../config/db.config.js";
+import { movimientosRepository } from "./movimientos.repository.js";
+import { createMovimientoManualSchema, listMovimientosQuerySchema } from "./movimientos.schema.js";
 import { Prisma } from "@prisma/client";
 import { AppError } from "../../middlewares/error.middleware.js";
 export const movimientosService = {
-    async getMovimientos(negocioId, filters) {
-        const { productoId, tipo, startDate, endDate, search, page, limit } = filters;
-        // Filtramos por negocioId para seguridad
-        const where = {
-            OR: [
-                { negocioId: negocioId },
-                { negocioId: null } // Por si hay datos huérfanos de pruebas anteriores
-            ]
-        };
-        if (productoId) {
-            where.productoId = productoId;
-            // Si filtramos por producto, quitamos el OR del negocio para ser específicos
-            delete where.OR;
-            where.negocioId = negocioId;
-        }
-        if (tipo)
-            where.tipo = tipo;
-        if (startDate || endDate) {
+    async createMovimientoManual(negocioId, dto) {
+        // 1. Validar
+        const data = createMovimientoManualSchema.parse(dto);
+        // 2. Verificar existencia del producto
+        const producto = await movimientosRepository.findProducto(data.productoId, negocioId);
+        if (!producto)
+            throw new AppError("El producto no existe o no pertenece a tu negocio.");
+        const cantidadDecimal = new Prisma.Decimal(data.cantidad);
+        // 3. Crear el movimiento vía repositorio
+        return await movimientosRepository.createMovimientoManual({
+            negocioId,
+            productoId: data.productoId,
+            tipo: data.tipo,
+            cantidad: cantidadDecimal,
+            motivo: data.motivo
+        });
+    },
+    async getMovimientos(negocioId, query) {
+        const filters = listMovimientosQuerySchema.parse(query);
+        // Armar el where de Prisma
+        const where = {};
+        if (filters.productoId)
+            where.productoId = filters.productoId;
+        if (filters.tipo)
+            where.tipo = filters.tipo;
+        if (filters.startDate || filters.endDate) {
             const dateFilter = {};
-            if (startDate)
-                dateFilter.gte = new Date(startDate);
-            if (endDate) {
-                const end = new Date(endDate);
-                end.setHours(23, 59, 59, 999);
-                dateFilter.lte = end;
-            }
+            if (filters.startDate)
+                dateFilter.gte = new Date(filters.startDate);
+            if (filters.endDate)
+                dateFilter.lte = new Date(filters.endDate);
             where.createdAt = dateFilter;
         }
-        if (search) {
+        if (filters.search) {
             where.OR = [
-                { motivo: { contains: search, mode: 'insensitive' } },
-                { producto: { nombre: { contains: search, mode: 'insensitive' } } }
+                { motivo: { contains: filters.search, mode: 'insensitive' } },
+                { producto: { nombre: { contains: filters.search, mode: 'insensitive' } } },
+                { producto: { codigoBarra: { contains: filters.search, mode: 'insensitive' } } },
             ];
         }
+        const page = filters.page || 1;
+        const limit = filters.limit || 50;
         const skip = (page - 1) * limit;
-        const [movimientos, total] = await Promise.all([
-            prisma.movimientoInventario.findMany({
-                where,
-                include: {
-                    producto: {
-                        include: {
-                            inventario: {
-                                select: {
-                                    stockActual: true
-                                }
-                            }
-                        }
-                    }
-                },
-                orderBy: { createdAt: 'desc' },
-                skip,
-                take: limit
-            }),
-            prisma.movimientoInventario.count({ where })
-        ]);
+        const { movimientos, total } = await movimientosRepository.getMovimientos(negocioId, where, skip, limit);
         return {
             movimientos,
-            total,
-            page,
-            limit,
-            totalPages: Math.ceil(total / limit)
+            pagination: {
+                total,
+                page,
+                limit,
+                totalPages: Math.ceil(total / limit)
+            }
         };
-    },
-    async createManualMovimiento(negocioId, dto) {
-        const { productoId, tipo, cantidad, motivo } = dto;
-        // 1. Verificar que el producto pertenece al negocio
-        const producto = await prisma.producto.findFirst({
-            where: { id: productoId, negocioId }
-        });
-        if (!producto) {
-            throw new AppError("Producto no encontrado en su negocio", 404);
-        }
-        const decimalCantidad = new Prisma.Decimal(cantidad);
-        return await prisma.$transaction(async (tx) => {
-            // 2. Crear el movimiento
-            const movimiento = await tx.movimientoInventario.create({
-                data: {
-                    negocioId,
-                    productoId,
-                    tipo,
-                    cantidad: decimalCantidad,
-                    motivo
-                },
-                include: { producto: true }
-            });
-            // 3. Actualizar el stock en inventario
-            // Si es ENTRADA o AJUSTE positivo (aunque aquí usamos tipos explícitos)
-            // Tipos: ENTRADA, SALIDA, MERMA, AJUSTE
-            // Para simplificar: ENTRADA aumenta, el resto disminuye. 
-            // O podríamos ser más específicos si AJUSTE pudiera ser positivo/negativo, 
-            // pero normalmente se registran como entradas o salidas.
-            const isIncrement = tipo === "ENTRADA";
-            await tx.inventario.update({
-                where: { productoId },
-                data: {
-                    stockActual: isIncrement
-                        ? { increment: decimalCantidad }
-                        : { decrement: decimalCantidad }
-                }
-            });
-            return movimiento;
-        });
     }
 };
 //# sourceMappingURL=movimientos.service.js.map

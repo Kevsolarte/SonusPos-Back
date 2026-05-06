@@ -1,44 +1,55 @@
 import { z } from "zod";
-const decimalAsString = z.union([z.string(), z.number()]).transform((v) => String(v));
 
+// Helper para transformar "" en null
+const emptyToNull = z.string().transform(v => v === "" ? null : v).nullable().optional();
 
 export const createProductoSchema = z.object({
-    // Nombre: Min 3 letras, máximo 100
-    nombre: z.string()
-        .min(2, "El nombre debe tener al menos 2 caracteres")
-        .max(100, "El nombre es demasiado largo"),
+    nombre: z.string().min(1, "El nombre es obligatorio").max(100),
+    codigoBarra: emptyToNull,
+    descripcion: emptyToNull,
+    imagenUrl: z.preprocess((val) => val === "" ? null : val, z.string().url().nullable().optional()),
+    categoriaId: z.preprocess((val) => val === "" ? null : val, z.string().uuid("Categoría inválida").optional().nullable()),
+    
+    esCombo: z.boolean().optional().default(false),
+    componentes: z.array(z.object({
+        componenteId: z.string().uuid(),
+        cantidad: z.number().positive()
+    })).optional().nullable(),
 
-    codigoBarra: z.string().optional().nullable(),
-    descripcion: z.string().max(255, "La descripción es muy larga").optional().nullable(),
-    imagenUrl: z.union([z.string().url("URL de imagen inválida"), z.literal("").transform(() => null)]).optional().nullable(),
-
-    // Tipo de Venta (PESO o UNIDAD)
     tipoVenta: z.enum(["PESO", "UNIDAD"]).optional().default("UNIDAD"),
+    unidadMedida: z.string().max(20).optional().default("UNIDAD"),
 
-    // Solo permitimos nuestras unidades oficiales por los momentos
-    unidadMedida: z.enum(["KG", "G", "L", "ML", "UNIDAD", "PZA"]),
-    inventario: z.object({
-        stockActual: z.number().min(0, "El stock inicial no puede ser negativo"),
-        stockMin: z.number().min(0, "El stock mínimo no puede ser negativo"),
-        stockMax: z.number().min(1, "El stock máximo debe ser al menos 1").optional().default(1000),
-        ubicacion: z.string().max(100).optional().nullable(),
-    }),
     precio: z.object({
-        preciocompra: z.number().positive("El precio de compra debe ser mayor a 0"),
-        precioDetal: z.number().positive("El precio detal debe ser mayor a 0"),
+        preciocompra: z.number().min(0).default(0),
+        precioDetal: z.number().positive("El precio al detal debe ser mayor a 0"),
         precioMayor: z.number().min(0).optional().default(0),
-    })
+    }),
+    inventario: z.object({
+        stockActual: z.number().min(0).default(0),
+        stockMin: z.number().min(0).optional().default(0),
+        stockMax: z.number().min(0).optional().nullable(),
+        alertastockbaja: z.boolean().optional().default(false),
+        ubicacion: emptyToNull,
+    }),
+    variantes: z.array(z.object({
+        nombre: z.string().min(1, "Nombre de variante obligatorio"),
+        sku: z.string().optional().nullable(),
+        stockActual: z.number().min(0).default(0),
+        precioExtra: z.coerce.number().default(0)
+    })).optional().nullable(),
 });
 
 export const updateProductoSchema = createProductoSchema.partial();
 
-export const addStockSchema = z.object({
-    productoId: z.string().uuid("ID de producto inválido"),
-    cantidad: z.number().positive("La cantidad a agregar debe ser mayor a 0"),
-    motivo: z.string().optional().default("Reposición de stock")
-});
-
 export type createProductoType = z.infer<typeof createProductoSchema>;
 export type updateProductoType = z.infer<typeof updateProductoSchema>;
-export type addStockType = z.infer<typeof addStockSchema>;
 
+export const addStockSchema = z.object({
+    productoId: z.string().uuid("ID de producto inválido"),
+    cantidad: z.number().positive("La cantidad debe ser mayor a 0"),
+    motivo: z.string().max(255).optional(),
+    cuentaId: z.string().uuid().optional().nullable(),
+    monto: z.number().min(0).optional().nullable(),
+    proveedorId: z.string().uuid().optional().nullable(),
+    estadoPago: z.enum(["PAGADO", "PENDIENTE"]).optional().nullable(),
+});

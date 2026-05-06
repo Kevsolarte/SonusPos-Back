@@ -1,18 +1,30 @@
 import { ventasService } from "./ventas.service.js";
-import { createVentaFullSchema } from "./ventas.schema.js";
+import { asyncHandler } from "../../middlewares/asynchandler.js";
+/**
+ * Ventas Controller
+ * Responsabilidad: Recibir requests del POS y delegar al ventasService.
+ * El service es quien orquesta la lógica de totales, promociones, stock y pagos.
+ */
 export const ventasController = {
-    async createVenta(req, res) {
-        const negocioId = req.auth.negocioId;
-        const { error } = createVentaFullSchema.safeParse(req.body);
-        if (error)
-            return res.status(400).json({ error: error.message });
-        const venta = await ventasService.createVenta(negocioId, req.body);
-        return res.status(201).json(venta);
-    },
-    async calcularTotales(req, res) {
-        const negocioId = req.auth.negocioId;
+    /**
+     * POST /pos/venta
+     * Procesa una venta completa: calcula totales, descuenta stock,
+     * registra pagos y genera el movimiento financiero en la cuenta.
+     */
+    createVenta: asyncHandler(async (req, res) => {
+        const { negocioId, sub: userId } = req.auth;
+        const venta = await ventasService.createVenta(negocioId, userId, req.body);
+        res.status(201).json(venta);
+    }),
+    /**
+     * POST /pos/calcular
+     * Preview de totales antes de confirmar la venta.
+     * Aplica promociones y calcula márgenes sin guardar nada en la BD.
+     */
+    calcularTotales: asyncHandler(async (req, res) => {
+        const { negocioId } = req.auth;
         const resultado = await ventasService.calcularTotales(negocioId, req.body);
-        res.json(resultado);
-    }
+        res.status(200).json(resultado);
+    }),
 };
 //# sourceMappingURL=ventas.controller.js.map

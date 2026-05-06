@@ -1,0 +1,55 @@
+import { usuariosRepository } from "./usuarios.repository.js";
+import { negocioRepository } from "../Negocio/negocio.repository.js";
+import { createUserSchema, updateUserSchema, type CreateUserDto, type UpdateUserDto } from "./usuarios.schema.js";
+import argon2 from "argon2";
+import { AppError } from "../../middlewares/error.middleware.js";
+
+export const usuariosService = {
+  async getUsuarios(negocioId: string) {
+    return await usuariosRepository.findAll(negocioId);
+  },
+
+  async createUsuario(negocioId: string, dto: CreateUserDto) {
+    const data = createUserSchema.parse(dto);
+
+    // VALIDACIÓN DE LÍMITES (PLAN)
+    const limits = await negocioRepository.getLimits(negocioId);
+    if (limits && limits._count.users >= limits.limiteUsuarios) {
+      throw new AppError(`Has alcanzado el límite de ${limits.limiteUsuarios} usuarios permitido por tu plan.`, 403);
+    }
+
+    const passwordHash = await argon2.hash(data.password);
+
+    try {
+      return await usuariosRepository.create(negocioId, { ...data, passwordHash });
+    } catch (e: any) {
+      if (e.code === "P2002") throw new AppError("El email ya está en uso", 400);
+      throw e;
+    }
+  },
+
+  async updateUsuario(id: string, negocioId: string, dto: UpdateUserDto) {
+    const data = updateUserSchema.parse(dto);
+    
+    let passwordHash: string | undefined;
+    if (data.password) {
+      passwordHash = await argon2.hash(data.password);
+    }
+
+    return await usuariosRepository.update(id, negocioId, { 
+      ...data, 
+      ...(passwordHash !== undefined && { passwordHash }) 
+    });
+  },
+
+  async deleteUsuario(id: string, negocioId: string) {
+    try {
+      return await usuariosRepository.delete(id, negocioId);
+    } catch (e: any) {
+      if (e.code === "P2003") {
+        throw new AppError("No se puede eliminar el usuario porque tiene historial registrado (cierres). Desactívalo en su lugar.", 400);
+      }
+      throw e;
+    }
+  },
+};

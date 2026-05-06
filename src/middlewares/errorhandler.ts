@@ -1,8 +1,27 @@
 import type { ErrorRequestHandler } from "express";
 import { ZodError } from "zod";
 import { AppError } from "./error.middleware.js";
+import { prisma } from "../config/db.config.js";
 
-export const errorHandler: ErrorRequestHandler = (err, req, res, next) => {
+export const errorHandler: ErrorRequestHandler = async (err, req, res, next) => {
+  // 1. LOG DE ERROR EN DB (PROACTIVO)
+  try {
+    const auth = (req as any).auth;
+    await prisma.errorLog.create({
+      data: {
+        mensaje: err.message || "Error desconocido",
+        stack: process.env.NODE_ENV !== "production" ? err.stack : null,
+        ruta: req.originalUrl,
+        metodo: req.method,
+        userId: auth?.sub,
+        negocioId: auth?.negocioId
+      }
+    });
+  } catch (logError) {
+    console.error("⚠️ Error al guardar log en DB:", logError);
+  }
+
+  // 2. RESPUESTAS SEGÚN TIPO DE ERROR
   // Zod
   if (err instanceof ZodError) {
     return res.status(400).json({ error: "VALIDATION_ERROR", issues: err.issues });

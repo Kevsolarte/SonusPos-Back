@@ -12,17 +12,22 @@ const clienteCreateSchema = z.object({
 
 const ventaDetalleSchema = z.object({
   productoId: z.string().uuid("Producto no existe"),
+  varianteId: z.string().uuid("Variante no válida").optional().nullable(),
   cantidad: decimalAsString,
 });
 
 const pagoSchema = z.object({
-  // Por ahora solo estos ya luego se anadiran diferentes tipos de pago segun lo que desea el usuario
-  metodo: z.enum(["EFECTIVO", "TARJETA", "TRANSFERENCIA", "PAGO_MOVIL", "EFECTIVO_USD", "EFECTIVO_VES"]),
-  monto: decimalAsString, 
-  referencia: z.string().optional(),
-  ultimos4: z.string().min(4).max(4).optional(),
-  recibido: decimalAsString.optional(),
-  cambio: decimalAsString.optional(),
+  metodo: z.enum(["EFECTIVO", "TARJETA", "TRANSFERENCIA", "PAGO_MOVIL", "EFECTIVO_USD", "EFECTIVO_VES", "CREDITO"]),
+  montoBase: decimalAsString, 
+  montoLocal: decimalAsString.optional().nullable(),
+  moneda: z.enum(["USD", "VES", "BTC", "EUR", "COP", "OTHER"]).default("USD"),
+  tasaCambioId: z.string().uuid().optional().nullable(),
+  tasaCambioUsada: decimalAsString.optional().nullable(),
+  referencia: z.string().optional().nullable(),
+  ultimos4: z.string().optional().nullable(),
+  recibido: decimalAsString.optional().nullable(),
+  cambio: decimalAsString.optional().nullable(),
+  cuentaId: z.string().uuid().optional().nullable(),
 });
 
 export const createVentaFullSchema = z
@@ -33,9 +38,12 @@ export const createVentaFullSchema = z
   
 
     nota: z.string().optional(),
+    tasaCambio: decimalAsString.optional().nullable(),
+    descuentoPorcentaje: decimalAsString.default("0").optional(),
 
     detalles: z.array(ventaDetalleSchema).min(1),
-    pagos: z.array(pagoSchema).min(1),
+    pagos: z.array(pagoSchema).min(0), // permitimos 0 pagos si es 100% crédito
+    estado: z.enum(["PAGADA", "CREDITO"]).default("PAGADA"),
   })
   .refine((d) => !(d.clienteId && d.clienteCreate), {
     message: "Envía clienteId o clienteCreate, no ambos.",
@@ -45,6 +53,7 @@ export const calcularTotalesSchema = z.object({
   detalles: z.array(
     z.object({
       productoId: z.string().uuid(),
+      varianteId: z.string().uuid().optional().nullable(),
       cantidad: decimalAsString,
     })
   ).min(1),

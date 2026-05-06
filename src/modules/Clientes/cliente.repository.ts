@@ -57,7 +57,7 @@ export const clienteRepository = {
                 where,
                 skip,
                 take: limit,
-                orderBy: { nombre: "asc" },
+                orderBy: { createdAt: "desc" },
             }),
             prisma.cliente.count({ where })
         ]);

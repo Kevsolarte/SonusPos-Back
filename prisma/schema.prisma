@@ -7,19 +7,55 @@ datasource db {
 }
 
 model Negocio {
-  id          String                 @id @default(uuid())
-  nombre      String
-  ruc         String?                @unique
-  direccion   String?
-  telefono    String?
-  createdAt   DateTime               @default(now())
-  updatedAt   DateTime               @updatedAt
+  id        String   @id @default(uuid())
+  nombre    String
+  ruc       String?  @unique
+  direccion String?
+  telefono  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // SaaS Fields
+  plan            String    @default("GRATIS") // GRATIS, BASICO, PREMIUM
+  venceEl         DateTime?
+  limiteUsuarios  Int       @default(1)
+  limiteProductos Int       @default(50)
+  activo          Boolean   @default(true)
+
   cierres     Cierre[]
   clientes    Cliente[]
   movimientos MovimientoInventario[]
   productos   Producto[]
-  users       User[]
   ventas      Venta[]
+  cuentas     Cuenta[]
+  categorias  Categoria[]
+  users       User[]
+  promociones Promocion[]
+  proveedores Proveedor[]
+  tasas       TasaCambio[]
+  cobros      Cobro[]
+  deudas      Deuda[]
+  config      NegocioConfig?
+  suscripciones SuscripcionPago[]
+}
+
+model NegocioConfig {
+  id        String   @id @default(uuid())
+  negocioId String   @unique
+  negocio   Negocio  @relation(fields: [negocioId], references: [id])
+
+  // Impuestos
+  impuestoNombre           String  @default("IVA")
+  impuestoValor            Float   @default(0.16)
+  preciosIncluyenImpuesto  Boolean @default(false)
+
+  // Operación
+  monedaSimbolo            String  @default("$")
+  permitirStockNegativo    Boolean @default(false)
+  obligatorioAbrirCaja     Boolean @default(true)
+  ticketMensaje            String? @default("¡Gracias por su compra!")
+
+  updatedAt DateTime @updatedAt
 }
 
 model User {
@@ -30,8 +66,11 @@ model User {
   updatedAt    DateTime @updatedAt
   passwordHash String
   role         Role
+  activo       Boolean  @default(true)
+  permissions  Json?    // { pos: boolean, inventario: boolean, verCostos: boolean, ... }
   negocioId    String?
   cierres      Cierre[]
+  ventas       Venta[]
   negocio      Negocio? @relation(fields: [negocioId], references: [id])
 }
 
@@ -46,15 +85,64 @@ model Producto {
   updatedAt      DateTime               @updatedAt
   negocioId      String?
   activo         Boolean                @default(true)
+  esCombo        Boolean                @default(false)
   imagenUrl      String?
   inventario     Inventario?
   movimientos    MovimientoInventario[]
   precio         Precio?
+  categoriaId    String?
+  categoria      Categoria?             @relation(fields: [categoriaId], references: [id])
   negocio        Negocio?               @relation(fields: [negocioId], references: [id])
   ventadDetalles VentaDetalle[]
+  promociones    PromocionProducto[]
+  variantes      ProductoVariante[]
+  
+  // Relaciones para Combos
+  componentes    ComboComponente[]      @relation("ComboToComponentes")
+  parteDeCombos  ComboComponente[]      @relation("ComponenteToCombos")
 
   @@unique([nombre, negocioId])
   @@unique([codigoBarra, negocioId])
+}
+
+model ProductoVariante {
+  id          String   @id @default(uuid())
+  productoId  String
+  nombre      String   // Ej: "Talla M", "Color Rojo"
+  sku         String?  // Código único para esta variante
+  stockActual Decimal  @db.Decimal(10, 3) @default(0)
+  precioExtra Decimal  @db.Decimal(10, 2) @default(0) // Por si la variante cuesta más que el base
+  
+  producto    Producto @relation(fields: [productoId], references: [id], onDelete: Cascade)
+  ventasDetalles VentaDetalle[]
+
+  @@unique([sku, productoId])
+  @@index([productoId])
+}
+
+model Categoria {
+  id        String     @id @default(uuid())
+  nombre    String
+  descripcion String?
+  activo    Boolean    @default(true)
+  negocioId String
+  negocio   Negocio    @relation(fields: [negocioId], references: [id])
+  productos Producto[]
+
+  @@unique([nombre, negocioId])
+}
+
+model ComboComponente {
+  id           String   @id @default(uuid())
+  comboId      String
+  componenteId String
+  cantidad     Decimal  @db.Decimal(10, 3)
+  
+  combo        Producto @relation("ComboToComponentes", fields: [comboId], references: [id], onDelete: Cascade)
+  componente   Producto @relation("ComponenteToCombos", fields: [componenteId], references: [id])
+
+  @@index([comboId])
+  @@index([componenteId])
 }
 
 model Inventario {
@@ -86,10 +174,35 @@ model MovimientoInventario {
   tipo       TipoMovimiento
   cantidad   Decimal        @db.Decimal(10, 2)
   motivo     String?
+  costo      Decimal?       @db.Decimal(10, 3)
   createdAt  DateTime       @default(now())
   negocioId  String?
+  
+  // Relación con Proveedor (Opcional)
+  proveedorId String?
+  proveedor   Proveedor?   @relation(fields: [proveedorId], references: [id])
+  estadoPago  EstadoPago?   @default(PAGADO)
+  
   negocio    Negocio?       @relation(fields: [negocioId], references: [id])
   producto   Producto       @relation(fields: [productoId], references: [id])
+}
+
+model Proveedor {
+  id          String   @id @default(uuid())
+  nombre      String
+  documento   String?
+  telefono    String?
+  email       String?
+  direccion   String?
+  activo      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  negocioId   String
+  negocio     Negocio  @relation(fields: [negocioId], references: [id])
+  movimientos MovimientoInventario[]
+  deudas      Deuda[]  // deudas generadas por compras a este proveedor
+
+  @@unique([documento, negocioId])
 }
 
 model Cliente {
@@ -104,6 +217,7 @@ model Cliente {
   negocioId String?
   negocio   Negocio? @relation(fields: [negocioId], references: [id])
   ventas    Venta[]
+  cobros    Cobro[]  // cobros generados por ventas a crédito
 
   @@unique([documento, negocioId])
   @@index([nombre])
@@ -114,11 +228,15 @@ model Venta {
   id        String         @id @default(uuid())
   numero    String
   clienteId String?
+  userId    String         // Usuario que realizó la venta
   estado    EstadoVenta    @default(PAGADA)
   subtotal  Decimal        @db.Decimal(10, 2)
   descuento Decimal        @default(0) @db.Decimal(10, 2)
+  descuentoPorcentaje Decimal @default(0) @db.Decimal(5, 2)
   impuesto  Decimal        @default(0) @db.Decimal(10, 2)
   total     Decimal        @db.Decimal(10, 2)
+  totalLocal Decimal?      @db.Decimal(10, 2)
+  tasaCambio Decimal?      @db.Decimal(10, 4)
   nota      String?
   createdAt DateTime       @default(now())
   updatedAt DateTime       @updatedAt
@@ -127,28 +245,54 @@ model Venta {
   cierre    Cierre?        @relation(fields: [cierreId], references: [id])
   cliente   Cliente?       @relation(fields: [clienteId], references: [id])
   negocio   Negocio?       @relation(fields: [negocioId], references: [id])
+  user      User           @relation(fields: [userId], references: [id])
   detalles  VentaDetalle[]
   pagos     VentaPago[]
+  cobro     Cobro?         // cobro generado si la venta fue a crédito
 
   @@unique([numero, negocioId])
   @@index([createdAt])
   @@index([clienteId])
   @@index([cierreId])
+  @@index([userId])
 }
 
 model Cierre {
-  id           String   @id @default(uuid())
-  negocioId    String
-  userId       String
-  totalVentas  Decimal  @db.Decimal(10, 2)
-  cantVentas   Int
-  detallePagos Json?
-  createdAt    DateTime @default(now())
-  negocio      Negocio  @relation(fields: [negocioId], references: [id])
-  user         User     @relation(fields: [userId], references: [id])
-  ventas       Venta[]
+  id              String         @id @default(uuid())
+  negocioId       String
+  userId          String         // Cajero responsable
+  
+  // Totales del Sistema
+  totalVentas     Decimal        @db.Decimal(10, 2)
+  cantVentas      Int
+  detallePagos    Json?
+  
+  // Flujo de Efectivo
+  montoApertura   Decimal        @default(0) @db.Decimal(10, 2)
+  montoCierreReal Decimal?       @db.Decimal(10, 2) // Lo que el usuario contó
+  diferencia      Decimal?       @db.Decimal(10, 2) // Real - (Teórico + Apertura)
+  
+  // Auditoría y Estado
+  estado          EstadoCierre   @default(ABIERTO)
+  auditadoPor     String?        // ID del Admin que verificó
+  notasAuditoria  String?
+  
+  createdAt       DateTime       @default(now())
+  fechaCierre     DateTime?
+  
+  negocio         Negocio        @relation(fields: [negocioId], references: [id])
+  user            User           @relation(fields: [userId], references: [id])
+  ventas          Venta[]
 
   @@index([negocioId])
+  @@index([userId])
+}
+
+enum EstadoCierre {
+  ABIERTO
+  PENDIENTE
+  APROBADO
+  RECHAZADO
 }
 
 model VentaDetalle {
@@ -163,30 +307,270 @@ model VentaDetalle {
   createdAt      DateTime     @default(now())
   producto       Producto     @relation(fields: [productoId], references: [id])
   venta          Venta        @relation(fields: [ventaId], references: [id], onDelete: Cascade)
+  
+  promocionId    String?
+  promocion      Promocion?   @relation(fields: [promocionId], references: [id])
+  
+  varianteId     String?
+  variante       ProductoVariante? @relation(fields: [varianteId], references: [id])
 
   @@index([ventaId])
   @@index([productoId])
 }
 
+model TasaCambio {
+  id          String   @id @default(uuid())
+  nombre      String   // Ej: "Tasa BCV", "Euros"
+  moneda      Moneda   // VES, EUR, COP, etc.
+  tasa        Decimal  @db.Decimal(10, 4) // Cuántos VES/EUR equivale 1 USD
+  isPrincipal Boolean  @default(false)
+  negocioId   String
+  negocio     Negocio  @relation(fields: [negocioId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  pagosUsados VentaPago[] // Pagos donde se aplicó esta tasa
+}
+
 model VentaPago {
-  id         String     @id @default(uuid())
-  ventaId    String
-  metodo     MetodoPago
-  monto      Decimal    @db.Decimal(10, 2)
-  referencia String?
-  ultimos4   String?
-  recibido   Decimal?   @db.Decimal(10, 2)
-  cambio     Decimal?   @db.Decimal(10, 2)
-  createdAt  DateTime   @default(now())
-  venta      Venta      @relation(fields: [ventaId], references: [id], onDelete: Cascade)
+  id               String      @id @default(uuid())
+  ventaId          String
+  metodo           MetodoPago
+  
+  // Métrica doble
+  montoBase        Decimal     @default(0) @db.Decimal(10, 2) // Lo que cuadra la venta (en USD)
+  montoLocal       Decimal?    @db.Decimal(10, 2) // Lo entregado en físico/transferencia (en Moneda Local)
+  moneda           Moneda      @default(USD)      // Moneda local usada
+  tasaCambioId     String?     // ID de la tasa usada
+  tasaCambioUsada  Decimal?    @db.Decimal(10, 4) // Foto de la tasa en este segundo (Ej: 38.54)
+  tasaReferencia   TasaCambio? @relation(fields: [tasaCambioId], references: [id])
+
+  referencia       String?
+  ultimos4         String?
+  recibido         Decimal?    @db.Decimal(10, 2)
+  cambio           Decimal?    @db.Decimal(10, 2)
+  createdAt        DateTime    @default(now())
+  venta            Venta       @relation(fields: [ventaId], references: [id], onDelete: Cascade)
+  cuentaId         String?
+  cuenta           Cuenta?     @relation(fields: [cuentaId], references: [id])
 
   @@index([ventaId])
   @@index([metodo])
+  @@index([cuentaId])
+  @@index([tasaCambioId])
+}
+
+model Cuenta {
+  id            String                  @id @default(uuid())
+  nombre        String
+  tipo          TipoCuenta              @default(EFECTIVO)
+  saldoUSD      Decimal                 @default(0) @db.Decimal(10, 2)
+  saldoVES      Decimal                 @default(0) @db.Decimal(10, 2)
+  activo        Boolean                 @default(true)
+  negocioId     String
+  negocio       Negocio                 @relation(fields: [negocioId], references: [id])
+  transacciones TransaccionFinanciera[]
+  pagos         VentaPago[]
+  abonos        Abono[]                 // abonos de cobros/deudas liquidados por esta cuenta
+
+  @@unique([nombre, negocioId])
+}
+
+model TransaccionFinanciera {
+  id           String          @id @default(uuid())
+  cuentaId     String
+  tipo         TipoTransaccion // INGRESO | EGRESO
+  monto        Decimal         @db.Decimal(10, 2) // Monto del movimiento en la moneda indicada
+  moneda       String          @default("USD")    // "USD" o "VES" — indica qué balance se afecta
+  tasaUsada    Decimal?        @db.Decimal(10, 4) // Snapshot de la tasa activa al momento del movimiento
+  motivo       String          // Descripción del movimiento
+  referencia   String?         // Número de referencia bancaria (opcional)
+  referenciaId String?         // ID de venta u otro registro relacionado
+  createdAt    DateTime        @default(now())
+  cuenta       Cuenta          @relation(fields: [cuentaId], references: [id])
+
+  @@index([cuentaId])
+  @@index([referenciaId])
+}
+
+// ─── Módulo Cobros y Deudas ───────────────────────────────────────────────────
+
+model Cobro {
+  id               String    @id @default(uuid())
+  negocioId        String
+  negocio          Negocio   @relation(fields: [negocioId], references: [id])
+  clienteId        String?
+  cliente          Cliente?  @relation(fields: [clienteId], references: [id])
+  ventaId          String?   @unique   // Venta de origen si es venta a crédito
+  venta            Venta?    @relation(fields: [ventaId], references: [id])
+  descripcion      String    // Concepto del cobro
+  monto            Decimal   @db.Decimal(10, 2)
+  montoPagado      Decimal   @default(0) @db.Decimal(10, 2)
+  moneda           String    @default("USD")
+  tasaCreacion     Decimal?  @db.Decimal(10, 4) // Snapshot de tasa al crear
+  fechaVencimiento DateTime?
+  notas            String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  abonos           Abono[]
+
+  @@index([negocioId])
+  @@index([clienteId])
+}
+
+model Deuda {
+  id                  String     @id @default(uuid())
+  negocioId           String
+  negocio             Negocio    @relation(fields: [negocioId], references: [id])
+  proveedorId         String?
+  proveedor           Proveedor? @relation(fields: [proveedorId], references: [id])
+  descripcionAcreedor String?    // Nombre libre si no hay proveedor registrado
+  movimientoId        String?    @unique // MovimientoInventario de origen
+  descripcion         String     // Concepto de la deuda
+  monto               Decimal    @db.Decimal(10, 2)
+  montoPagado         Decimal    @default(0) @db.Decimal(10, 2)
+  moneda              String     @default("USD")
+  tasaCreacion        Decimal?   @db.Decimal(10, 4)
+  fechaVencimiento    DateTime?
+  notas               String?
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+  abonos              Abono[]
+
+  @@index([negocioId])
+  @@index([proveedorId])
+}
+
+model Abono {
+  id        String    @id @default(uuid())
+  cobroId   String?
+  cobro     Cobro?    @relation(fields: [cobroId], references: [id])
+  deudaId   String?
+  deuda     Deuda?    @relation(fields: [deudaId], references: [id])
+  monto     Decimal   @db.Decimal(10, 2)
+  moneda    String    @default("USD")
+  tasaUsada Decimal?  @db.Decimal(10, 4)
+  cuentaId  String?
+  cuenta    Cuenta?   @relation(fields: [cuentaId], references: [id])
+  notas     String?
+  createdAt DateTime  @default(now())
+
+  @@index([cobroId])
+  @@index([deudaId])
+  @@index([cuentaId])
+}
+
+model Promocion {
+  id          String   @id @default(uuid())
+  nombre      String
+  descripcion String?
+  tipo        TipoPromocion
+  valor       Decimal  @db.Decimal(10, 2)
+  fechaInicio DateTime
+  fechaFin    DateTime
+  activa      Boolean  @default(true)
+  negocioId   String
+  negocio     Negocio  @relation(fields: [negocioId], references: [id])
+  
+  productos   PromocionProducto[]
+  ventasDetalles VentaDetalle[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([negocioId])
+}
+
+model PromocionProducto {
+  id           String    @id @default(uuid())
+  promocionId  String
+  productoId   String
+  promocion    Promocion @relation(fields: [promocionId], references: [id], onDelete: Cascade)
+  producto     Producto  @relation(fields: [productoId], references: [id], onDelete: Cascade)
+
+  @@index([promocionId])
+  @@index([productoId])
+}
+
+// ─── SaaS ADMINISTRATION ───────────────────────────────────────────────────
+
+model SuscripcionPago {
+  id              String   @id @default(uuid())
+  negocioId       String
+  negocio         Negocio  @relation(fields: [negocioId], references: [id])
+  
+  plan            String   // GRATIS, BASICO, PREMIUM
+  ciclo           String   // MENSUAL, ANUAL
+  monto           Decimal  @db.Decimal(10, 2)
+  metodoPago      String   // ZELLE, BINANCE, TRANSFERENCIA, etc.
+  referencia      String
+  comprobanteUrl  String?  // Link a la imagen/PDF del comprobante
+  estado          String   @default("PENDIENTE") // PENDIENTE, APROBADO, RECHAZADO
+  notas           String?
+  
+  fechaPago       DateTime
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([negocioId])
+  @@index([estado])
+}
+
+model SaaSMetodoPago {
+  id            String   @id @default(uuid())
+  nombre        String   // Ej: "Zelle", "Binance Pay", "Banesco"
+  moneda        String   @default("USD") // Ej: "USD", "BS", "COP"
+  detalles      String   // Los datos de la cuenta (correo, número, etc.)
+  instrucciones String?  // "Enviar captura", "Poner nombre en concepto", etc.
+  activo        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model ErrorLog {
+  id          String   @id @default(uuid())
+  negocioId   String?  // Opcional, por si el error es general
+  userId      String?
+  mensaje     String   @db.Text
+  stack       String?  @db.Text
+  ruta        String?  // URL o endpoint donde falló
+  metodo      String?  // GET, POST, etc.
+  createdAt   DateTime @default(now())
+
+  @@index([negocioId])
+  @@index([createdAt])
+}
+
+enum TipoCuenta {
+  EFECTIVO        // Efectivo físico en caja
+  BANCO           // Cuenta bancaria / tarjeta de débito
+  DIGITAL         // Billetera digital genérica
+  PUNTO_DE_VENTA  // Terminal punto de venta (POS/datafono)
+  PAGO_MOVIL      // Pago móvil (Venezuela: BDV, Banesco, etc.)
+  BIO_PAGO        // Biopago (Venezuela)
+  ZELLE           // Zelle (USD)
+  PAYPAL          // PayPal
+  BINANCE         // Binance Pay / P2P
+  TRANSFERENCIA   // Transferencia bancaria genérica
+}
+
+enum Moneda {
+  USD
+  VES
+  BTC
+  EUR
+  COP
+  OTHER
+}
+
+enum TipoTransaccion {
+  INGRESO
+  EGRESO
 }
 
 enum Role {
   SUPERADMIN
   ADMIN
+  USUARIO
 }
 
 enum TipoVenta {
@@ -223,4 +607,22 @@ enum EstadoVenta {
   ABIERTA
   PAGADA
   ANULADA
+  CREDITO  // Venta a crédito — genera un Cobro automáticamente
+}
+
+enum EstadoCredito {
+  PENDIENTE
+  PARCIAL
+  PAGADO
+  VENCIDO
+}
+
+enum TipoPromocion {
+  PORCENTAJE
+  PRECIO_FIJO
+}
+
+enum EstadoPago {
+  PAGADO
+  PENDIENTE
 }
