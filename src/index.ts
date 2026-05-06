@@ -2,8 +2,8 @@ import { app } from "./app.js";
 import { env } from "./config/env.config.js";
 import { prisma } from "./config/db.config.js";
 
-const server = app.listen(env.PORT, () => {
-  console.log(`🚀 Server is running on port ${env.PORT} in ${env.NODE_ENV} mode`);
+const server = app.listen(env.PORT, "0.0.0.0", () => {
+  console.log(`🚀 Server is running on http://0.0.0.0:${env.PORT} in ${env.NODE_ENV} mode`);
 });
 
 /**
