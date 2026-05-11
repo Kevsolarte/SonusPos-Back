@@ -170,7 +170,7 @@ export const inventarioRepository = {
             }
         }
         // 5. Ejecutar consultas en paralelo para mejorar rendimiento
-        const [productos, totalFiltered, allStats] = await Promise.all([
+        const [productos, totalFiltered, statsResult] = await Promise.all([
             prisma.inventario.findMany({
                 where: baseWhere,
                 include: {
@@ -187,53 +187,20 @@ export const inventarioRepository = {
                 take: limit,
             }),
             prisma.inventario.count({ where: baseWhere }),
-            // Obtenemos solo lo necesario para estadísticas globales
-            prisma.inventario.findMany({
-                where: { producto: { negocioId, activo: true } },
-                select: {
-                    stockActual: true,
-                    stockMin: true,
-                    producto: {
-                        select: {
-                            precio: { select: { preciocompra: true } },
-                            variantes: { select: { stockActual: true } }
-                        }
-                    }
-                }
-            })
+            // NUEVO: stats calculadas en DB, no en Node.js
+            prisma.$queryRaw `
+                SELECT
+                    COUNT(*) FILTER (WHERE i."stockActual" > 0 AND i."stockMin" IS NOT NULL AND i."stockActual" <= i."stockMin") AS low,
+                    COUNT(*) FILTER (WHERE i."stockActual" <= 0) AS critical,
+                    COALESCE(SUM(i."stockActual" * pr."preciocompra"), 0) AS capital
+                FROM "Inventario" i
+                JOIN "Producto" p ON p.id = i."productoId"
+                JOIN "Precio" pr ON pr."productoId" = p.id
+                WHERE p."negocioId" = ${negocioId} AND p.activo = true
+            `
         ]);
-        // 6. Calcular estadísticas globales (en memoria pero sobre un set reducido de datos)
-        let lowStock = 0;
-        let criticalStock = 0;
-        let capitalInventario = 0;
-        for (const item of allStats) {
-            const stock = Number(item.stockActual);
-            const min = Number(item.stockMin || 0);
-            const preciocompra = Number(item.producto?.precio?.preciocompra ?? 0);
-            capitalInventario += (stock * preciocompra);
-            let worstStatus = "ok";
-            if (stock <= 0)
-                worstStatus = "critical";
-            else if (stock <= min)
-                worstStatus = "low";
-            const variantes = item.producto?.variantes || [];
-            if (variantes.length > 0) {
-                for (const v of variantes) {
-                    const vStock = Number(v.stockActual);
-                    if (vStock <= 0) {
-                        worstStatus = "critical";
-                        break;
-                    }
-                    if (vStock <= min && worstStatus !== "critical") {
-                        worstStatus = "low";
-                    }
-                }
-            }
-            if (worstStatus === "critical")
-                criticalStock++;
-            else if (worstStatus === "low")
-                lowStock++;
-        }
+        const stats = statsResult[0];
+        const totalGlobal = await prisma.inventario.count({ where: { producto: { negocioId, activo: true } } });
         // 7. Mapear resultados finales
         const productosMapeados = productos.map((item) => {
             const p = item.producto;
@@ -258,10 +225,10 @@ export const inventarioRepository = {
             limit,
             totalPages: Math.ceil(totalFiltered / limit),
             meta: {
-                totalGlobal: allStats.length,
-                lowStock,
-                criticalStock,
-                capitalInventario,
+                totalGlobal,
+                lowStock: Number(stats?.low || 0),
+                criticalStock: Number(stats?.critical || 0),
+                capitalInventario: Number(stats?.capital || 0),
                 tasaVES
             }
         };

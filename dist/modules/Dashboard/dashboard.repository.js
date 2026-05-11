@@ -42,32 +42,21 @@ export const dashboardRepository = {
         }));
     },
     async getStockCritico(negocioId) {
-        // Usamos el método estándar de Prisma (findMany) como es habitual
-        const criticos = await prisma.inventario.findMany({
-            where: {
-                producto: { negocioId },
-                OR: [
-                    // Caso 1: El stock es 0 o menos (crítico absoluto)
-                    { stockActual: { lte: 0 } },
-                    // Caso 2: El stock es menor o igual al mínimo configurado
-                    {
-                        AND: [
-                            { stockMin: { gt: 0 } }, // Solo si tiene un mínimo configurado
-                            { stockActual: { lte: prisma.inventario.fields.stockMin } }
-                        ]
-                    }
-                ]
-            },
-            include: {
-                producto: {
-                    select: { nombre: true }
-                }
-            },
-            take: 5,
-            orderBy: { stockActual: "asc" },
-        });
+        const criticos = await prisma.$queryRaw `
+      SELECT i."stockActual", i."stockMin", p.nombre
+      FROM "Inventario" i
+      JOIN "Producto" p ON p.id = i."productoId"
+      WHERE p."negocioId" = ${negocioId}
+        AND p.activo = true
+        AND (
+          i."stockActual" <= 0
+          OR (i."stockMin" IS NOT NULL AND i."stockActual" <= i."stockMin")
+        )
+      ORDER BY i."stockActual" ASC
+      LIMIT 5
+    `;
         return criticos.map(c => ({
-            nombre: c.producto.nombre,
+            nombre: c.nombre,
             actual: Number(c.stockActual),
             minimo: Number(c.stockMin || 0),
         }));
@@ -88,24 +77,18 @@ export const dashboardRepository = {
         return { porCobrar, porPagar };
     },
     async getTopCobros(negocioId) {
-        // Cobros pendientes (monto > montoPagado)
-        const cobros = await prisma.cobro.findMany({
-            where: {
-                negocioId,
-                monto: { gt: prisma.cobro.fields.montoPagado },
-            },
-            include: {
-                cliente: { select: { nombre: true } }
-            },
-            take: 10,
-            orderBy: [
-                { monto: "desc" },
-                { createdAt: "asc" }
-            ]
-        });
+        const cobros = await prisma.$queryRaw `
+      SELECT c.id, c.monto, c."montoPagado", c."createdAt", cl.nombre AS cliente_nombre
+      FROM "Cobro" c
+      LEFT JOIN "Cliente" cl ON cl.id = c."clienteId"
+      WHERE c."negocioId" = ${negocioId}
+        AND c.monto > c."montoPagado"
+      ORDER BY c.monto DESC
+      LIMIT 10
+    `;
         return cobros.map(c => ({
             id: c.id,
-            nombre: c.cliente?.nombre || "Varios / Otros",
+            nombre: c.cliente_nombre || "Varios / Otros",
             monto: Number(c.monto),
             pendiente: Number(c.monto) - Number(c.montoPagado),
             fecha: c.createdAt,
@@ -159,36 +142,30 @@ export const dashboardRepository = {
     async getVentasPorHora(negocioId) {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
-        // Método estándar: Obtener ventas de hoy y agrupar en JS
-        const ventas = await prisma.venta.findMany({
-            where: {
-                negocioId,
-                createdAt: { gte: today },
-                estado: { not: "ANULADA" },
-            },
-            select: {
-                createdAt: true,
-                total: true,
-            }
-        });
-        // Agrupar por hora
-        const horas = {};
-        ventas.forEach(v => {
-            const hour = new Date(v.createdAt).getHours();
-            horas[hour] = (horas[hour] || 0) + Number(v.total);
-        });
-        return Object.entries(horas).map(([hour, total]) => ({
-            hour: Number(hour),
-            total: total,
+        const result = await prisma.$queryRaw `
+      SELECT EXTRACT(HOUR FROM "createdAt") AS hora, SUM(total) AS total
+      FROM "Venta"
+      WHERE "negocioId" = ${negocioId}
+        AND "createdAt" >= ${today}
+        AND estado != 'ANULADA'
+      GROUP BY hora
+      ORDER BY hora
+    `;
+        return result.map(r => ({
+            hour: Number(r.hora),
+            total: Number(r.total),
         }));
     },
     async getTopProductos(negocioId) {
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
         const result = await prisma.ventaDetalle.groupBy({
             by: ["productoId"],
             where: {
                 venta: {
                     negocioId,
                     estado: { not: "ANULADA" },
+                    createdAt: { gte: thirtyDaysAgo },
                 }
             },
             _sum: {

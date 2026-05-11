@@ -1,7 +1,7 @@
 import jwt from "jsonwebtoken";
 import { env } from "../../config/env.config.js";
 const ACCESS_SECRET = env.JWT_ACCESS_SECRET;
-const ACCESS_TTL = "12h";
+const ACCESS_TTL = env.JWT_ACCESS_TTL ?? "12h";
 export function signAccessToken(userId, role, negocioId, permissions) {
     const payload = { sub: userId, role: role, negocioId, permissions };
     return jwt.sign(payload, ACCESS_SECRET, { expiresIn: ACCESS_TTL });

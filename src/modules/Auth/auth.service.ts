@@ -48,14 +48,8 @@ export const authService = {
         if (!ok) throw new Error("Credenciales inválidas");
 
         // Dejamos que inicie sesión siempre, las restricciones se manejan en el middleware y el frontend
-
-        // VALIDACIÓN DE SEGURIDAD: Estado del Negocio
-        if (user.role !== 'SUPERADMIN' && user.negocioId) {
-            const negocio = await authRepository.findNegocioById(user.negocioId);
-            if (negocio && !negocio.activo) {
-                throw new Error("El acceso a este negocio ha sido suspendido por el administrador del sistema.");
-            }
-        }
+        // NOTA: Eliminamos la validación que bloqueaba el inicio de sesión para negocios inactivos.
+        // Ahora el frontend detecta que !activo o vencido y redirige a la vista de configuración para pago.
 
         const accessToken = signAccessToken(user.id, user.role, user.negocioId || "", user.permissions);
         const userFull = await authRepository.findByIdWithNegocio(user.id);

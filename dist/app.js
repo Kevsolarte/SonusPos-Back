@@ -63,9 +63,12 @@ app.use(cors({
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true, limit: "2mb" }));
 // Health Check
-app.get("/health", (req, res) => {
-    res.status(200).send("OK Server Running");
-});
+import { asyncHandler } from "./middlewares/asynchandler.js";
+import { prisma } from "./config/db.config.js";
+app.get("/health", asyncHandler(async (_req, res) => {
+    await prisma.$queryRaw `SELECT 1`;
+    res.status(200).json({ status: "ok", db: "connected", ts: new Date().toISOString() });
+}));
 // Domain Routes
 app.use("/auth", loginLimiter, authRoutes);
 app.use("/inventario", inventarioRoutes);

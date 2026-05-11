@@ -19,4 +19,4 @@ ENV PORT=10000
 
 EXPOSE 10000
 
-CMD ["npm", "start"]
+CMD ["sh", "-c", "npx prisma migrate deploy && npm start"]

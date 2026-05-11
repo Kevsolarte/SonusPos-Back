@@ -33,11 +33,16 @@ export async function requireAuth(req, res, next) {
                 };
                 businessCache.set(payload.negocioId, cached);
             }
-            const isSubscriptionRoute = req.originalUrl.includes('/suscripcion') ||
-                req.originalUrl.includes('/registrar-pago') ||
-                req.originalUrl.includes('/metodos-pago') ||
-                req.originalUrl.includes('/negocio') ||
-                req.originalUrl.includes('/auth/me');
+            const SUBSCRIPTION_PATHS = [
+                '/negocio/suscripcion',
+                '/negocio/registrar-pago',
+                '/negocio/metodos-pago',
+                '/negocio',
+                '/auth/me',
+            ];
+            const isSubscriptionRoute = SUBSCRIPTION_PATHS.some(p => req.originalUrl === p ||
+                req.originalUrl.startsWith(p + '?') ||
+                req.originalUrl.startsWith(p + '/'));
             if (!isSubscriptionRoute) {
                 if (!cached.activo) {
                     return res.status(403).json({

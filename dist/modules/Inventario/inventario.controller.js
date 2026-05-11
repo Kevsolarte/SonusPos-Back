@@ -58,7 +58,6 @@ export const inventarioController = {
         const isInvalidId = (id) => !id || id === "null" || id === "undefined" || id === "";
         const cleanProveedorId = isInvalidId(proveedorId) ? undefined : proveedorId;
         const cleanCuentaId = isInvalidId(cuentaId) ? undefined : cuentaId;
-        console.log("🛒 [AddStock] Payload limpio -> proveedorId:", cleanProveedorId, "cuentaId:", cleanCuentaId);
         const result = await inventarioService.addStock(negocioId, productoId, cantidad, motivo, cleanCuentaId, monto, moneda, cleanProveedorId, estadoPago);
         res.status(200).json(result);
     }),

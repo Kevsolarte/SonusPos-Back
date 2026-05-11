@@ -106,24 +106,32 @@ export const superAdminRepository = {
       newVence.setDate(newVence.getDate() + extensionDays);
 
       // 4. Determinar límites según el plan
-      let limiteUsuarios = 1;
-      let limiteProductos = 250;
+      const PLAN_LIMITS: Record<string, { limiteUsuarios: number; limiteProductos: number }> = {
+        PRUEBA:   { limiteUsuarios: 1,  limiteProductos: 50   },
+        TIENDITA: { limiteUsuarios: 3,  limiteProductos: 250  },
+        EMPRESA:  { limiteUsuarios: 10, limiteProductos: 1000 },
+      };
+      const limits = PLAN_LIMITS[pago.plan] ?? { limiteUsuarios: 3, limiteProductos: 250 };
 
-      if (pago.plan === "EMPRESA") {
-        limiteUsuarios = 10;
-        limiteProductos = 1000;
-      }
-
-      // 5. Actualizar negocio
-      return await tx.negocio.update({
+      // 5. Actualizar negocio — activo: true reactiva negocios suspendidos
+      const updatedNegocio = await tx.negocio.update({
         where: { id: pago.negocioId },
         data: {
           plan: pago.plan,
           venceEl: newVence,
-          limiteUsuarios,
-          limiteProductos
+          limiteUsuarios: limits.limiteUsuarios,
+          limiteProductos: limits.limiteProductos,
+          activo: true,
         }
       });
+
+      // 6. Reactivar todos los usuarios del negocio
+      await tx.user.updateMany({
+        where: { negocioId: pago.negocioId },
+        data: { activo: true }
+      });
+
+      return updatedNegocio;
     });
   },
 

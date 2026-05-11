@@ -5,7 +5,11 @@ const envSchema = z.object({
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
     DATABASE_URL: z.string().url("DATABASE_URL must be a valid connection string"),
     JWT_ACCESS_SECRET: z.string().min(1, "JWT_ACCESS_SECRET must be defined"),
+    JWT_ACCESS_TTL: z.string().default("12h"),
     FRONTEND_URL: z.string().url("FRONTEND_URL must be a valid URL").optional(),
+    SUPERADMIN_EMAIL: z.string().email().optional(),
+    SUPERADMIN_PASSWORD: z.string().min(1).optional(),
+    RESEND_API_KEY: z.string().optional(),
 });
 const _env = envSchema.safeParse(process.env);
 if (!_env.success) {
